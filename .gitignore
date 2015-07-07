@@ -1,0 +1,5 @@
+plr
+*.so
+lib/
+obj/
+obj-intel64/
