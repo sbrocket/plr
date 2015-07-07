@@ -1,5 +1,5 @@
 CC        = gcc
-COMFLAGS  = -Wall -Wextra -O3 -MMD -I../plrCommon
+COMFLAGS  = -Wall -Wextra -Werror -O3 -MMD -I../plrCommon
 CFLAGS    = -std=gnu99 -fPIC
 LDFLAGS   = -shared -Wl,--no-undefined -Wl,-rpath='$$ORIGIN' -L../lib
 LDLIBS    = -ldl -lplrCommon

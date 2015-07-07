@@ -1,5 +1,5 @@
 CC        = gcc
-COMFLAGS  = -Wall -Wextra -O3 -MMD -pthread
+COMFLAGS  = -Wall -Wextra -Werror -O3 -MMD -pthread
 CFLAGS    = -std=gnu99 -fPIC
 LDFLAGS   = -shared -Wl,--no-undefined -pthread
 LDLIBS    = -lrt

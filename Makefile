@@ -1,6 +1,6 @@
 CC        = gcc
 CXX       = g++
-COMFLAGS  = -Wall -Wextra -O3 -MMD -pthread -IplrCommon
+COMFLAGS  = -Wall -Wextra -Werror -O3 -MMD -pthread -IplrCommon
 CFLAGS    = -std=gnu99
 CXXFLAGS  = -std=c++11
 LDFLAGS   = -pthread -Llib
