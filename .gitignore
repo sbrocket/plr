@@ -3,3 +3,5 @@ plr
 lib/
 obj/
 obj-intel64/
+
+testprog/
