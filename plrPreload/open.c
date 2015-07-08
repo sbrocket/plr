@@ -2,16 +2,16 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <stdio.h>
 #include "libc_func.h"
 #include "plr.h"
 
+#include <stdio.h>
 #include <unistd.h>
 
 int open(const char *pathname, int flags, ...) {
   printf("[%d:open] Open file '%s'\n", getpid(), pathname);
 
-  plr_wait();
+  plr_checkSyscall();
   
   // Call original libc function
   libc_func(open, int, const char *, int, ...);
@@ -30,7 +30,7 @@ int open(const char *pathname, int flags, ...) {
 int open64(const char *pathname, int flags, ...) {
   printf("[%d:open64] Open file '%s'\n", getpid(), pathname);
   
-  plr_wait();
+  plr_checkSyscall();
   
   // Call original libc function
   libc_func(open64, int, const char *, int, ...);

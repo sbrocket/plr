@@ -12,7 +12,7 @@ int plr_figureheadExit();
 // and fork the other redundant processes.
 int plr_processInit();
 
-int plr_wait();
+int plr_checkSyscall();
 
 #ifdef __cplusplus
 }

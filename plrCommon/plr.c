@@ -26,6 +26,13 @@ int insidePLRCode = 0;
 // when it returns from this.
 int plr_forkNewProcess(perProcData_t *newProcShm);
 
+// 
+typedef int (*barrierActFptr)(void);
+int plr_waitBarrier(barrierActFptr actionFptr);
+
+// Handle expired watchdog timer during plr_waitBarrier
+int plr_watchdogExpired();
+
 ///////////////////////////////////////////////////////////////////////////////
 
 int plr_figureheadInit(int nProc) {
@@ -104,27 +111,33 @@ int plr_processInit() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_wait() {
+int plr_checkSyscall() {
   if (insidePLRCode) {
     return 0;
   }
   insidePLRCode = 1;
   
+  plr_waitBarrier(NULL);
+  
+  insidePLRCode = 0;
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plr_waitBarrier(barrierActFptr actionFptr) {  
   pthread_mutex_lock(&plrShm->lock);
-  int myPid = myProcShm->pid;
   
   // Ignore calls to plr_wait that come from the wrong pid, seems to
-  // occur when instrumenting binary with Pin
-  if (myPid != getpid()) {
+  // occur when also instrumenting binary with Pin
+  if (myProcShm->pid != getpid()) {
     pthread_mutex_unlock(&plrShm->lock);
-    insidePLRCode = 0;
     return 0;
   }
   
+  // Mark this process as waiting at barrier
   int waitIdx = plrShm->curWaitIdx;
   assert(plrShm->condWaitCnt[waitIdx] <= plrShm->nProc);
-  
-  // Mark this process as waiting
   myProcShm->waitIdx = waitIdx;
   plrShm->condWaitCnt[waitIdx]++;
   
@@ -140,91 +153,146 @@ int plr_wait() {
   
   // Wait until all processes have reached this barrier
   int watchdogExpired = 0;
-  while (myProcShm->waitIdx >= 0 && plrShm->condWaitCnt[waitIdx] < plrShm->nProc) {
-    if (watchdogExpired && !plrShm->restoring) {
-      // Watchdog timer expired, look for dead/stuck processes
-      if (plrShm->nProc - plrShm->condWaitCnt[waitIdx] > 1) {
-        // More than 1 process is not waiting, can't recover
-        fprintf(stderr, "[%d] Error: Watchdog expired & more than 1 process is not waiting - unrecoverable\n", myPid);
+  while (1) {
+    // Check barrier exit conditions
+    if (myProcShm->waitIdx < 0) {
+      // Wait flag already cleared, break out of wait loop
+      break;
+    }
+    if (myProcShm->waitIdx >= 0 && plrShm->condWaitCnt[waitIdx] == plrShm->nProc) {
+      // Exit condition is met but wait flag has not been removed
+      // Call barrier action through provided function ptr now that all
+      // processes are synchronized & waiting at the barrier
+      int actionSuccess = 0;
+      if (actionFptr) {
+        int ret = actionFptr();
+        actionSuccess = (ret >= 0);
+      } else {
+        // No action function ptr provided, default success once exit condition met
+        actionSuccess = 1;
+      }
+      
+      // If barrier action succeeds, wake up all other processes & leave barrier
+      if (actionSuccess) {
+        // Shift curWaitIdx to other value so subsequent plr_wait calls use the
+        // other condition variable
+        plrShm->curWaitIdx = (plrShm->curWaitIdx) ? 0 : 1;
+        
+        // Reset all wait flags and wake up all other processes
+        //printf("[%d] Signaling all processes to wake up for idx %d\n", getpid(), waitIdx);
+        for (int i = 0; i < plrShm->nProc; ++i) {
+          pthread_cond_signal(&allProcShm[i].cond[waitIdx]);
+          allProcShm[i].waitIdx = -1;
+        }
+        
+        // Break out of wait loop
+        break;
+      }
+    }
+    
+    // Check if watchdog expired
+    if (watchdogExpired) {
+      int ret = plr_watchdogExpired();
+      if (ret < 0) {
+        myProcShm->waitIdx = -1;
+        plrShm->condWaitCnt[waitIdx]--;
         pthread_mutex_unlock(&plrShm->lock);
         exit(1);
+      } else if (ret == 1) {
+        // Forked new process to replace stuck one, check barrier exit condition again
+        continue;
       }
-      for (int i = 0; i < plrShm->nProc; ++i) {
-        if (allProcShm[i].waitIdx < 0) {
-          printf("[%d] Pid %d failed to wait before watchdog expired\n", myPid, allProcShm[i].pid);
-          plrShm->restoring = 1;
-          
-          // Kill stuck process (if not already dead)
-          kill(allProcShm[i].pid, SIGKILL);
-          if (plrSD_freeProcData(&allProcShm[i]) < 0) {
-            fprintf(stderr, "[%d] plrSD_freeProcData failed\n", myPid);
-          }
-          
-          // Fork replacement process from current good process
-          if (plr_forkNewProcess(&allProcShm[i]) < 0) {
-            fprintf(stderr, "[%d] plr_forkNewProcess failed\n", myPid);
-          }
-
-          // If myProcShm equals the area for the process that was just killed,
-          // then this is the forked child. Do some setup on the new process.
-          if (myProcShm == &allProcShm[i]) {
-            myPid = myProcShm->pid;
-            myProcShm->waitIdx = plrShm->curWaitIdx;
-            plrShm->condWaitCnt[waitIdx]++;
-            plrShm->restoring = 0;
-            printf("[%d] Forked replacement process starting to wait\n", myPid);
-          }
-          
-          break;
-        }
-      }
-      // Should have forked new process to replace stuck one, check exit 
-      // condition again
-      continue;
     }
     
     // Must use CLOCK_REALTIME, _timedwait needs abstime since epoch
     struct timespec absWait;
-    if (clock_gettime(CLOCK_REALTIME, &absWait) < 0) {
-      perror("clock_gettime");
-      pthread_mutex_unlock(&plrShm->lock);
-      exit(1);
-    }
-    absWait = tspecAddMs(absWait, 100);
+    clock_gettime(CLOCK_REALTIME, &absWait);
+    absWait = tspecAddMs(absWait, 200);
         
     // Using _timedwait as a watchdog timer, to avoid deadlock in case one of the
     // redundant processes has died or is stuck
     // NOTE: This ignores the case of pthread_cond_timedwait returning EINTR, in
     // which case less time than specified has elapsed. This can result in a longer
-    // than desired wait time.
+    // than desired wait time because timer may just restart.
 
     int ret = pthread_cond_timedwait(&myProcShm->cond[waitIdx], &plrShm->lock, &absWait);
     if (ret == ETIMEDOUT) {
       // Loop again to make sure timer didn't expire while last proc was waiting
       watchdogExpired = 1; 
     } else if (ret != 0) {
-      fprintf(stderr, "[%d] pthread_cond_timedwait returned %d\n", myPid, ret);
+      fprintf(stderr, "[%d] pthread_cond_timedwait returned %d\n", getpid(), ret);
     }
   }
   
-  // If this was the last process to wait, wake up all other processes
-  if (myProcShm->waitIdx >= 0) {
-    // Shift curWaitIdx to other value so subsequent plr_wait calls use the
-    // other condition variable
-    plrShm->curWaitIdx = (plrShm->curWaitIdx) ? 0 : 1;
-    
-    //printf("[%d] Signaling all processes to wake up for idx %d\n", myPid, waitIdx);
-    for (int i = 0; i < plrShm->nProc; ++i) {
-      pthread_cond_signal(&allProcShm[i].cond[waitIdx]);
-      allProcShm[i].waitIdx = -1;
-    }
-  }
   // Decrement waiting process counter
   plrShm->condWaitCnt[waitIdx]--;
   
   pthread_mutex_unlock(&plrShm->lock);
-  insidePLRCode = 0;
   return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Return value:
+//   < 0 : Error occured
+//     0 : No replacement process created
+//     1 : Replacement process created
+int plr_watchdogExpired() {
+  // If another process already started restoration, don't do anything
+  if (plrShm->restoring) {
+    return 0;
+  }
+  
+  // Check if more than one process failed to wait
+  int waitIdx = plrShm->curWaitIdx;
+  if (plrShm->nProc - plrShm->condWaitCnt[waitIdx] > 1) {
+    // More than 1 process is not waiting, can't recover
+    fprintf(stderr, "[%d] Error: Watchdog expired & more than 1 process is not waiting - unrecoverable\n", myProcShm->pid);
+    return -1;
+  }
+  
+  // Replace faulted process with a copy of the current process
+  int didReplace = 0;
+  for (int i = 0; i < plrShm->nProc; ++i) {
+    if (allProcShm[i].waitIdx < 0) {
+      printf("[%d] Pid %d failed to wait before watchdog expired\n", myProcShm->pid, allProcShm[i].pid);
+      plrShm->restoring = 1;
+      didReplace = 1;
+      
+      // Kill stuck process (if not already dead)
+      kill(allProcShm[i].pid, SIGKILL);
+      if (plrSD_freeProcData(&allProcShm[i]) < 0) {
+        fprintf(stderr, "[%d] plrSD_freeProcData failed\n", myProcShm->pid);
+        return -1;
+      }
+      
+      // Fork replacement process from current good process
+      if (plr_forkNewProcess(&allProcShm[i]) < 0) {
+        fprintf(stderr, "[%d] plr_forkNewProcess failed\n", myProcShm->pid);
+        return -1;
+      }
+
+      // If myProcShm equals the area for the process that was just killed,
+      // then this is the forked child. Do some setup on the new process.
+      if (myProcShm == &allProcShm[i]) {
+        myProcShm->waitIdx = plrShm->curWaitIdx;
+        plrShm->condWaitCnt[waitIdx]++;
+        plrShm->restoring = 0;
+        printf("[%d] Replacement process started\n", myProcShm->pid);
+      }
+      
+      break;
+    }
+  }
+  
+  // Handle error case of watchdog expiring but all processes waiting
+  if (!didReplace) {
+    fprintf(stderr, "[%d] Error: Watchdog expired but didn't find any non-waiting processes\n", myProcShm->pid);
+    return -1;
+  }
+  
+  // Return 1 to indicate that replacement processes should have been created
+  return 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
