@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include <pthread.h>
+#include "plrCompare.h"
 
 typedef struct {
   int pid;
@@ -13,6 +14,8 @@ typedef struct {
   int waitIdx;
   // Two separate condition variables used to keep track of separate wait events.
   pthread_cond_t cond[2];
+  // Saved syscall arguments from last checked syscall
+  syscallArgs_t syscallArgs;
 } perProcData_t;
 
 typedef struct {
@@ -56,11 +59,17 @@ int plrSD_acquireSharedData();
 int plrSD_cleanupSharedData();
 
 // Initializes the given per-proc data struct for the current process.
-// plrShm->lock must be held while calling this.
+// plrShm->lock shall be held while calling this.
 int plrSD_initProcData(perProcData_t *procShm);
 
+// Initializes the given per-proc data struct for the current process,
+// copying some data from the source's area and setting others for the
+// new process.
+// plrShm->lock shall be held while calling this.
+int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *parent);
+
 // Zeroes out the given per-proc data struct, readying it for reuse.
-// plrShm->lock must be held while calling this.
+// plrShm->lock shall be held while calling this.
 int plrSD_freeProcData(perProcData_t *procShm);
 
 #ifdef __cplusplus

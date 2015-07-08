@@ -134,6 +134,18 @@ int plrSD_initProcData(perProcData_t *procShm) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *src) {
+  // Initialize same things as plrSD_initProcData normally does
+  plrSD_initProcData(procShm);
+  
+  // Copy stored syscall arguments to from parent
+  memcpy(&procShm->syscallArgs, &src->syscallArgs, sizeof(syscallArgs_t));
+  
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 int plrSD_freeProcData(perProcData_t *procShm) {
   if (procShm->pid == 0) {
     // Already free, nothing to do
