@@ -1,0 +1,40 @@
+<NotepadPlus>
+    <Project name="plr">
+        <File name="LICENSE" />
+        <File name="Makefile" />
+        <File name="plrMain.c" />
+        <File name="README.md" />
+    </Project>
+    <Project name="plrCommon">
+        <File name="plrCommon\Makefile" />
+        <File name="plrCommon\plr.c" />
+        <File name="plrCommon\plr.h" />
+        <File name="plrCommon\plrCompare.c" />
+        <File name="plrCommon\plrCompare.h" />
+        <File name="plrCommon\plrSharedData.c" />
+        <File name="plrCommon\plrSharedData.h" />
+        <File name="plrCommon\pthreadUtil.c" />
+        <File name="plrCommon\pthreadUtil.h" />
+        <File name="plrCommon\timeUtil.c" />
+        <File name="plrCommon\timeUtil.h" />
+    </Project>
+    <Project name="plrPreload">
+        <File name="plrPreload\crc32c_util.c" />
+        <File name="plrPreload\crc32c_util.h" />
+        <File name="plrPreload\libc_func.c" />
+        <File name="plrPreload\libc_func.h" />
+        <File name="plrPreload\Makefile" />
+        <File name="plrPreload\open.c" />
+        <File name="plrPreload\preloadInit.c" />
+    </Project>
+    <Project name="pinFaultInject">
+        <File name="pinFaultInject\makefile" />
+        <File name="pinFaultInject\makefile.rules" />
+        <File name="pinFaultInject\pinFaultInject.cpp" />
+    </Project>
+    <Project name="plrPintool">
+        <File name="plrPintool\makefile" />
+        <File name="plrPintool\makefile.rules" />
+        <File name="plrPintool\plrPintool.cpp" />
+    </Project>
+</NotepadPlus>
