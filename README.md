@@ -18,4 +18,3 @@ More complete description TBD
 * Clean up fault cases like multiple faulted processes to exit PLR gracefully
 
 ## Known Issues
-* Bug: crc32c on open() pathname argument miscompare periodically, despite same string value being crc'd

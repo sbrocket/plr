@@ -9,8 +9,8 @@ void initPLRPreload() {
     fprintf(stderr, "Error: PLR process init failed\n");
     exit(1);
   }
-  if (setupCRC32c() < 0) {
-    fprintf(stderr, "Error: CRC32c setup failed\n");
+  if (setup_crc32c() < 0) {
+    fprintf(stderr, "Error: crc32c setup failed\n");
     exit(1);
   }
 }

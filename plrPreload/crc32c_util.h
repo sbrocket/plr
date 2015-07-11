@@ -5,9 +5,14 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdint.h>
 
-int setupCRC32c();
-int calcCRC32c(const void *buf, size_t len);
+// crc32c calculation using Linux kernel crypto AF_ALG interface
+int setup_crc32c();
+int crc32c(const void *buf, size_t len, unsigned int *result);
+
+// crc32 calculation using table lookup
+uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 
 #ifdef __cplusplus
 }
