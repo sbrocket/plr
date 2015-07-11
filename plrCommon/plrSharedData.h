@@ -69,6 +69,8 @@ int plrSD_initProcData(perProcData_t *procShm);
 int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *parent);
 
 // Zeroes out the given per-proc data struct, readying it for reuse.
+// Note that the condition variable will be broadcasted as part of this
+// before being destroyed.
 // plrShm->lock shall be held while calling this.
 int plrSD_freeProcData(perProcData_t *procShm);
 

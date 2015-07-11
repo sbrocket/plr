@@ -19,4 +19,3 @@ More complete description TBD
 
 ## Known Issues
 * Bug: crc32c on open() pathname argument miscompare periodically, despite same string value being crc'd
-* Bug: pthread_cond_destroy() fails in plrSD_freeProcData() if proc is currently waiting, e.g. killing detected bad process

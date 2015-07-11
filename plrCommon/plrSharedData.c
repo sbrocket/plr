@@ -152,8 +152,12 @@ int plrSD_freeProcData(perProcData_t *procShm) {
     return 0;
   }
   
-  // Destroy existing condition variable
+  // Wake up any waiting threads & destroy condition variables
   for (int i = 0; i < 2; ++i) {
+    if (pthread_cond_broadcast(&procShm->cond[i]) != 0) {
+      fprintf(stderr, "pthread_cond_broadcast failed\n");
+      return -1;
+    }
     if (pthread_cond_destroy(&procShm->cond[i]) != 0) {
       fprintf(stderr, "pthread_cond_destroy failed\n");
       return -1;
