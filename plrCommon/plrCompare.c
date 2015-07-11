@@ -1,13 +1,23 @@
 #include "plrCompare.h"
+#include <stdio.h>
 
 int plrC_compareArgs(const syscallArgs_t *args1, const syscallArgs_t *args2) {
-  int foundDiff = 0;
-  if      (args1->addr   != args2->addr)   { foundDiff = 1; }
-  else if (args1->arg[0] != args2->arg[0]) { foundDiff = 2; }
-  else if (args1->arg[1] != args2->arg[1]) { foundDiff = 3; }
-  else if (args1->arg[2] != args2->arg[2]) { foundDiff = 4; }
-  else if (args1->arg[3] != args2->arg[3]) { foundDiff = 5; }
-  else if (args1->arg[4] != args2->arg[4]) { foundDiff = 6; }
-  else if (args1->arg[5] != args2->arg[5]) { foundDiff = 7; }
-  return foundDiff;
+  int faultVal = 0;
+  
+  #define CompareElement(elem, faultBit)    \
+  if (args1->elem != args2->elem) {         \
+    faultVal |= 1 << faultBit;              \
+    printf("Argument miscompare in " #elem ", 0x%lX != 0x%lX\n",  \
+      (unsigned long)args1->elem, (unsigned long)args2->elem);    \
+  }
+  
+  CompareElement(addr,   0);
+  CompareElement(arg[0], 1);
+  CompareElement(arg[1], 2);
+  CompareElement(arg[2], 3);
+  CompareElement(arg[3], 4);
+  CompareElement(arg[4], 5);
+  CompareElement(arg[5], 6);
+  
+  return faultVal;
 }
