@@ -26,6 +26,9 @@
         <File name="plrPreload\Makefile" />
         <File name="plrPreload\open.c" />
         <File name="plrPreload\preloadInit.c" />
+        <File name="plrPreload\read.c" />
+        <File name="plrPreload\write.c" />
+        <File name="plrPreload\close.c" />
     </Project>
     <Project name="pinFaultInject">
         <File name="pinFaultInject\makefile" />
