@@ -3,7 +3,7 @@ CXX       = g++
 COMFLAGS  = -Wall -Wextra -Werror -O3 -MMD -pthread -IplrCommon
 CFLAGS    = -std=gnu99
 CXXFLAGS  = -std=c++11
-LDFLAGS   = -pthread -Llib
+LDFLAGS   = -pthread -Wl,-rpath='$$ORIGIN/lib' -Llib
 LDLIBS    = -lrt -lplrCommon
 
 OBJDIR    = obj
@@ -32,7 +32,7 @@ clean:
 
 ###############################################################################
 
-plr: $(OBJ) $(LIBS)
+plr: $(OBJ) | $(LIBS)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 # Include .d dependency files created by -MMD flag
