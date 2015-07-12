@@ -1,4 +1,5 @@
 #include "pin.H"
+#include "plr.h"
 #include "plrSharedData.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +20,7 @@ perProcData_t *nextProcToFault = NULL;
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
     "o", "plrTool.out", "Specify output file name");
 KNOB<string> KnobFaultProb(KNOB_MODE_WRITEONCE, "pintool",
-    "p", "0.01", "Specify per-instruction fault injection probability");
+    "p", "0.02", "Specify per-instruction fault injection probability");
     
 //-----------------------------------------------------------------------------
 // Usage() function
@@ -30,20 +31,37 @@ static INT32 Usage() {
   return -1;
 }
 
-VOID updateNextProcToFault(BOOL initialCall) {
+VOID getPLRShm() {
   // BANDAID: The pintool seems to access a different plrShm than the process it's
   // attached to. Until a way to access the process's own plrShm is found,
   // we can just acquire the shared data area again for this separate pointer.
   if (plrShm == NULL && plrSD_acquireSharedData() < 0) {
     fprintf(stderr, "Error: plrSD_acquireSharedData() failed in pintool\n");
     exit(1);
-  }  
+  }
   if (plrShm == NULL) {
     fprintf(stderr, "[%d:pin] plrShm still NULL in pintool\n", PIN_GetPid());
     exit(1);
   }
   //printf("[%d] pin: &plrShm = %p, plrShm = %p\n", PIN_GetPid(), &plrShm, plrShm);
-    
+
+  
+  // Set myProcShm properly inside Pintool
+  int myPid = PIN_GetPid();
+  for (int i = 0; i < plrShm->nProc; ++i) {
+    if (allProcShm[i].pid == myPid) {
+      myProcShm = &allProcShm[i];
+    }
+  }
+  if (myProcShm == NULL) {
+    fprintf(stderr, "[%d:pin] myProcShm still NULL in pintool\n", PIN_GetPid());
+    exit(1);
+  }
+}
+
+VOID updateNextProcToFault(BOOL initialCall) {   
+  getPLRShm();
+ 
   if (initialCall) {
     pthread_mutex_lock(&plrShm->toolLock);
   }
@@ -130,7 +148,8 @@ VOID InstrumentTrace(TRACE trace, VOID *arg) {
 }
 
 VOID ApplicationStart(VOID *arg) {
-
+  getPLRShm();
+  plr_clearInsidePLR();
 }
 
 //-----------------------------------------------------------------------------
@@ -170,7 +189,7 @@ int main(int argc, char *argv[]) {
   
   TRACE_AddInstrumentFunction(InstrumentTrace, NULL);
   
-  //PIN_AddApplicationStartFunction(ApplicationStart, NULL);
+  PIN_AddApplicationStartFunction(ApplicationStart, NULL);
   
   // Start the program, never returns
   PIN_StartProgram();

@@ -9,6 +9,8 @@ extern "C" {
 
 typedef struct {
   int pid;
+  // File descriptor of shared memory area
+  int shmFd;
   // Index of condition variable currently waiting in. Value of -1 indicates
   // not waiting, whereas 0 or 1 gives the index currently waiting in.
   int waitIdx;
@@ -16,6 +18,12 @@ typedef struct {
   pthread_cond_t cond[2];
   // Saved syscall arguments from last checked syscall
   syscallArgs_t syscallArgs;
+  // Current mapped size of extra shared memory area for this process
+  int extraShmMapped;
+  // Boolean flag, indicates that currently inside PLR code
+  int insidePLR;
+  // Boolean flag, indicates insidePLR flag set once to true
+  int insidePLRSetOnce;
 } perProcData_t;
 
 typedef struct {
@@ -28,7 +36,12 @@ typedef struct {
   int condWaitCnt[2];
   // Boolean flag, set true when in the middle of restoring a failed process.
   int restoring;
+  // Mutex lock used for shared across all PLR processes.
   pthread_mutex_t lock;
+  // Current global size of extra shared memory area
+  int extraShmSize;
+  // Boolean flag, indicates that "insidePLR" flag should start out set
+  int insidePLRInitTrue;
   
   // Fault injection pintool data
   // The following data is added here for convenience, to avoid creating a separate shared 
@@ -45,6 +58,10 @@ extern plrData_t *plrShm;
 extern perProcData_t *allProcShm;
 // myProcShm is a pointer to this process's per-proc data
 extern perProcData_t *myProcShm;
+// extraShm is a pointer to an area of shared memory that
+// can change dynamically, as needed to copy syscall data
+// between processes, throughout the life of a PLR process group
+extern void *extraShm;
 
 // Initialize the shared data area for the first time.
 int plrSD_initSharedData(int nProc);
@@ -73,6 +90,13 @@ int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *parent);
 // before being destroyed.
 // plrShm->lock shall be held while calling this.
 int plrSD_freeProcData(perProcData_t *procShm);
+
+// Expand the global extra shared memory area to at least minSize bytes.
+// plrShm->lock shall be held while calling this.
+int plrSD_resizeExtraShm(int minSize);
+
+// Refresh the extra shared memory area mapped for this process.
+int plrSD_refreshExtraShm();
 
 #ifdef __cplusplus
 }

@@ -18,8 +18,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Global data
 
-// Used to avoid recursion when PLR code calls libc syscalls
-int insidePLRCode = 0;
+static int g_insidePLRInternal = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private functions
@@ -29,6 +28,15 @@ int insidePLRCode = 0;
 // when it returns from this.
 int plr_forkNewProcess(perProcData_t *newProcShm);
 
+typedef enum {
+  // Any process may perform the wait action
+  WAIT_ACTION_ANY,
+  // Only the master process may perform the wait action
+  WAIT_ACTION_MASTER,
+  // Only a slave process may perform the wait action
+  WAIT_ACTION_SLAVE
+} waitActionType_t;
+
 // Process synchronization barrier
 // Once processes have all reached the barrier, the provided function pointer
 // is called in one process to perform some action. This function shall return
@@ -36,10 +44,11 @@ int plr_forkNewProcess(perProcData_t *newProcShm);
 //   < 0 : Error occurred
 //     0 : Action completed, let all processes exit barrier
 //     1 : Rerun action on next sequential process
-int plr_waitBarrier(int (*actionPtr)(void));
+// The wait action type determines which process will perform the wait action.
+int plr_waitBarrier(int (*actionPtr)(void), waitActionType_t actionType);
 
-// Barrier action function for plr_checkSyscall()
-int plr_checkSyscallArgs();
+// Barrier action function for plr_checkSyscallArgs()
+int plr_checkSyscallArgs_act();
 
 // Handle expired watchdog timer during plr_waitBarrier
 int plr_watchdogExpired();
@@ -52,7 +61,7 @@ int plr_replaceProcessIdx(int idx);
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_figureheadInit(int nProc) {
+int plr_figureheadInit(int nProc, int pintoolMode) {
   // Set figurehead process as subreaper so grandchild processes
   // get reparented to it, instead of init
   if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {
@@ -64,6 +73,7 @@ int plr_figureheadInit(int nProc) {
     fprintf(stderr, "Error: PLR Shared data init failed\n");
     return -1;
   }
+  plrShm->insidePLRInitTrue = pintoolMode;
   return 0;
 }
 
@@ -80,7 +90,7 @@ int plr_figureheadExit() {
 ///////////////////////////////////////////////////////////////////////////////
 
 int plr_processInit() {
-  insidePLRCode = 1;
+  g_insidePLRInternal = 1;
   
   if (plrSD_acquireSharedData() < 0) {
     fprintf(stderr, "Error: PLR shared data acquire failed\n");
@@ -121,35 +131,36 @@ int plr_processInit() {
     }
   }
   
+  g_insidePLRInternal = 0;
+  if (plrShm->insidePLRInitTrue && !myProcShm->insidePLRSetOnce) {
+    myProcShm->insidePLRSetOnce = 1;
+    plr_setInsidePLR();
+  }
+  
   pthread_mutex_unlock(&plrShm->lock);
-  insidePLRCode = 0;
+  
   return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_checkSyscall(const syscallArgs_t *args) {
-  if (insidePLRCode) {
-    return 0;
-  }
-  insidePLRCode = 1;
-  
+int plr_checkSyscallArgs(const syscallArgs_t *args) {
   // Copy syscall arguments to shared memory area
   memcpy(&myProcShm->syscallArgs, args, sizeof(syscallArgs_t));
   
   // Wait for all processes to reach this barrier, then compare all syscall arguments
-  if (plr_waitBarrier(&plr_checkSyscallArgs) < 0) {
+  if (plr_waitBarrier(&plr_checkSyscallArgs_act, WAIT_ACTION_ANY) < 0) {
     fprintf(stderr, "Error: plr_waitBarrier failed\n");
     exit(1);
   }
   
-  insidePLRCode = 0;
   return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_checkSyscallArgs() {
+// Barrier action for plr_checkSyscallArgs()
+int plr_checkSyscallArgs_act() {
   // TODO: Temporarily assuming 3 redundant processes
   assert(plrShm->nProc == 3);
   
@@ -186,7 +197,6 @@ int plr_checkSyscallArgs() {
   
   if (badProc == -1) {
     // All arguments agree, nothing to do
-    printf("[%d] All args agree\n", getpid());
     return 0;
   } else if (badProc >= 0 && badProc < plrShm->nProc) {
     if (myProcShm == &allProcShm[badProc]) {
@@ -212,7 +222,88 @@ int plr_checkSyscallArgs() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_waitBarrier(int (*actionPtr)(void)) {  
+int plr_isMasterProcess() {
+  // Whichever process is index 0 in allProcShm is treated as the 
+  // "master process"
+  if (myProcShm == &allProcShm[0]) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plr_masterAction(int (*actionPtr)(void)) {
+  // Wait for all processes to reach this barrier, then master process will
+  // run the provided function
+  if (plr_waitBarrier(actionPtr, WAIT_ACTION_MASTER) < 0) {
+    fprintf(stderr, "Error: plr_waitBarrier failed\n");
+    exit(1);
+  }
+  
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plr_copyToShm(const void *src, size_t length, size_t offset) {
+  // First resize extraShm area so that it's at least as big as needed
+  if (plrSD_resizeExtraShm(offset+length) < 0) {
+    fprintf(stderr, "[%d] Error: plrSD_resizeExtraShm failed\n", getpid());
+    exit(1);
+  }
+  
+  // Refresh this process's extraShm mapping
+  if (plrSD_refreshExtraShm() < 0) {
+    fprintf(stderr, "[%d] Error: plrSD_refreshExtraShm failed\n", getpid());
+    exit(1);
+  }
+  
+  // Copy data into extraShm at specified offset
+  memcpy(extraShm+offset, src, length);
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plr_copyFromShm(void *dest, size_t length, size_t offset) {
+  // Refresh this process's extraShm mapping
+  if (plrSD_refreshExtraShm() < 0) {
+    fprintf(stderr, "[%d] Error: plrSD_refreshExtraShm failed\n", getpid());
+    exit(1);
+  }
+  
+  // Copy data from extraShm at specified offset
+  memcpy(dest, extraShm+offset, length);
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+void plr_setInsidePLR() {
+  assert(myProcShm);
+  assert(!myProcShm->insidePLR);
+  myProcShm->insidePLR = 1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void plr_clearInsidePLR() {
+  assert(myProcShm);
+  assert(myProcShm->insidePLR);
+  myProcShm->insidePLR = 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plr_checkInsidePLR() {
+  assert(g_insidePLRInternal || myProcShm);
+  return g_insidePLRInternal || myProcShm->insidePLR;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plr_waitBarrier(int (*actionPtr)(void), waitActionType_t actionType) {
   pthread_mutex_lock(&plrShm->lock);
   
   // Ignore calls to plr_wait that come from the wrong pid, seems to
@@ -252,20 +343,45 @@ int plr_waitBarrier(int (*actionPtr)(void)) {
       // processes are synchronized & waiting at the barrier
       int actionSuccess = 0;
       if (actionPtr) {
-        int ret = actionPtr();
-        if (ret < 0) {
-          myProcShm->waitIdx = -1;
-          plrShm->condWaitCnt[waitIdx]--;
-          pthread_mutex_unlock(&plrShm->lock);
-          exit(1);
-        } else if (ret == 0) {
-          actionSuccess = 1;
-        } else {
-          // Signal another process to wake up & run action
-          for (int i = 0; i < plrShm->nProc; ++i) {
-            if (myProcShm != &allProcShm[i]) {
-              pthread_cond_signal(&allProcShm[i].cond[waitIdx]);
-              break;
+        int runAction = 0;
+        
+        switch (actionType) {
+        case WAIT_ACTION_ANY:
+          runAction = 1;
+          break;
+        case WAIT_ACTION_MASTER:
+          if (plr_isMasterProcess()) {
+            runAction = 1;
+          } else {
+            // Wake up master process so it can run action
+            pthread_cond_signal(&allProcShm[0].cond[waitIdx]);
+          }
+          break;
+        case WAIT_ACTION_SLAVE:
+          if (plr_isMasterProcess()) {
+            // Wake up a slave process so it can run action
+            pthread_cond_signal(&allProcShm[1].cond[waitIdx]);
+          } else {
+            runAction = 1;
+          }
+        }
+        
+        if (runAction) {
+          int ret = actionPtr();
+          if (ret < 0) {
+            myProcShm->waitIdx = -1;
+            plrShm->condWaitCnt[waitIdx]--;
+            pthread_mutex_unlock(&plrShm->lock);
+            exit(1);
+          } else if (ret == 0) {
+            actionSuccess = 1;
+          } else {
+            // Signal another process to wake up & run action
+            for (int i = 0; i < plrShm->nProc; ++i) {
+              if (myProcShm != &allProcShm[i]) {
+                pthread_cond_signal(&allProcShm[i].cond[waitIdx]);
+                break;
+              }
             }
           }
         }

@@ -18,22 +18,18 @@
 plrData_t *plrShm = NULL;
 perProcData_t *allProcShm = NULL;
 perProcData_t *myProcShm = NULL;
+void *extraShm = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private functions
-int plrSD_getShmName(char name[NAME_MAX]);
+static int plrSD_getShmName(char name[NAME_MAX]);
+static int plrSD_extraShmOffset();
+static int plrSD_openShmFile(int oflag, mode_t mode);
 
 ///////////////////////////////////////////////////////////////////////////////
 
 int plrSD_initSharedData(int nProc) {
-  char shmName[NAME_MAX];
-  plrSD_getShmName(shmName);
-  
-  int shmFd = shm_open(shmName, O_CREAT | O_EXCL | O_RDWR, 0600);
-  if (shmFd < 0) {
-    perror("shm_open");
-    return -1;
-  }
+  int shmFd = plrSD_openShmFile(O_CREAT | O_EXCL | O_RDWR, 0600);
   
   // Grow shmFd to needed data size
   int shmSize = sizeof(plrData_t) + nProc*sizeof(perProcData_t);
@@ -50,6 +46,7 @@ int plrSD_initSharedData(int nProc) {
   }
   // allProcShm is located right after plrShm
   allProcShm = (perProcData_t*)(plrShm+1);
+  close(shmFd);
   
   // Initialize values in plrShm. Values not explicitly initalized here default
   // to zero because of ftruncate on shmFd.
@@ -57,49 +54,37 @@ int plrSD_initSharedData(int nProc) {
   pthread_mutex_init_pshared(&plrShm->lock);
   pthread_mutex_init_pshared(&plrShm->toolLock);
   
-  int pid = getpid();
-  printf("[%d] Init shm w/ name = '%s'\n", pid, shmName);
-  
   return 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 int plrSD_acquireSharedData() {
-  char shmName[NAME_MAX];
-  plrSD_getShmName(shmName);
+  int shmFd = plrSD_openShmFile(O_RDWR, 0);
   
-  int shmFd = shm_open(shmName, O_RDWR, 0);
-  if (shmFd < 0) {
-    perror("shm_open");
-    return -1;
-  }
-    
   // First mmap the common data area
   // Need it to know how many redundant processes there are + get access to the lock
-  //int shmSize = sizeof(plrData_t) + 3*sizeof(perProcData_t);
-
   plrShm = mmap(NULL, sizeof(plrData_t), PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
-  //plrShm = mmap(NULL, shmSize, PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
   if (plrShm == MAP_FAILED) {
     perror("mmap");
     return -1;
   }
   
-  // Then mremap to get the per-process data areas too
+  // Then remap to get the per-process data areas too
+  // Can't use mremap because Pin doesn't seem to support it
   int shmSize = sizeof(plrData_t) + plrShm->nProc*sizeof(perProcData_t);
   if (munmap(plrShm, sizeof(plrData_t)) < 0) {
     perror("munmap");
     return -1;
   }
   plrShm = mmap(NULL, shmSize, PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
-  //plrShm = mremap(plrShm, sizeof(plrData_t), shmSize, MREMAP_MAYMOVE);
   if (plrShm == MAP_FAILED) {
-    perror("mremap");
+    perror("mmap");
     return -1;
   }
   // allProcShm is located right after plrShm
   allProcShm = (perProcData_t*)(plrShm+1);
+  close(shmFd);
 
   return 0;
 }
@@ -126,6 +111,7 @@ int plrSD_initProcData(perProcData_t *procShm) {
   // Initialize values in procShm
   procShm->pid = getpid();
   procShm->waitIdx = -1;
+  procShm->shmFd = -1;
   pthread_cond_init_pshared(&procShm->cond[0]);
   pthread_cond_init_pshared(&procShm->cond[1]);
   
@@ -135,8 +121,12 @@ int plrSD_initProcData(perProcData_t *procShm) {
 ///////////////////////////////////////////////////////////////////////////////
 
 int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *src) {
-  // Initialize same things as plrSD_initProcData normally does
+  // Initialize values in procShm
   plrSD_initProcData(procShm);
+  
+  // Copy insidePLR state from parent
+  procShm->insidePLR = src->insidePLR;
+  procShm->insidePLRSetOnce = src->insidePLRSetOnce;
   
   // Copy stored syscall arguments to from parent
   memcpy(&procShm->syscallArgs, &src->syscallArgs, sizeof(syscallArgs_t));
@@ -172,7 +162,92 @@ int plrSD_freeProcData(perProcData_t *procShm) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plrSD_getShmName(char name[NAME_MAX]) {
+// Function to calculate & cache extraShm offset, to avoid both code duplication
+// & unnecessary syscall and calculations when not updating extra shm
+
+static int extraShmOffset = 0;
+static int plrSD_extraShmOffset() {
+  if (extraShmOffset == 0) {
+    // Determine offset of extra shm area within shm file, must be page aligned
+    int pageSize = sysconf(_SC_PAGE_SIZE);
+    int fixedDataSize = sizeof(plrData_t) + plrShm->nProc*sizeof(perProcData_t);
+    int rem = fixedDataSize % pageSize;
+    extraShmOffset = (rem == 0) ? fixedDataSize : fixedDataSize + pageSize - rem;
+  }
+  return extraShmOffset;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int plrSD_openShmFile(int oflag, mode_t mode) {
+  char shmName[NAME_MAX];
+  plrSD_getShmName(shmName);
+  int shmFd = shm_open(shmName, oflag, mode);
+  if (shmFd < 0) {
+    perror("shm_open");
+    return -1;
+  }
+  return shmFd;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plrSD_resizeExtraShm(int minSize) {
+  // Expand the global size of the extra shared memory area, if needed
+  if (minSize > plrShm->extraShmSize) {
+    plrShm->extraShmSize = minSize;
+    
+    if (myProcShm->shmFd == -1) {
+      myProcShm->shmFd = plrSD_openShmFile(O_RDWR, 0);
+    }
+    
+    // Grow shmFd to new max size
+    int shmSize = plrSD_extraShmOffset() + minSize;
+    if (ftruncate(myProcShm->shmFd, shmSize) == -1) {
+      perror("ftruncate");
+      return -1;
+    }
+  }
+  
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+int plrSD_refreshExtraShm() {
+  // Expand the mapped size for this process, if needed
+  if (myProcShm->extraShmMapped < plrShm->extraShmSize) {
+    if (myProcShm->shmFd == -1) {
+      myProcShm->shmFd = plrSD_openShmFile(O_RDWR, 0);
+    }
+    
+    if (myProcShm->extraShmMapped == 0) {
+      extraShm = mmap(NULL, plrShm->extraShmSize, PROT_READ | PROT_WRITE, MAP_SHARED, myProcShm->shmFd, plrSD_extraShmOffset());
+      if (extraShm == MAP_FAILED) {
+        perror("mmap");
+        return -1;
+      }
+    } else {
+      // Can't use mremap because Pin doesn't seem support it
+      if (munmap(extraShm, myProcShm->extraShmMapped) < 0) {
+        perror("munmap");
+        return -1;
+      }
+      extraShm = mmap(NULL, plrShm->extraShmSize, PROT_READ | PROT_WRITE, MAP_SHARED, myProcShm->shmFd, plrSD_extraShmOffset());
+      if (plrShm == MAP_FAILED) {
+        perror("mmap");
+        return -1;
+      }
+    }
+    myProcShm->extraShmMapped = plrShm->extraShmSize;
+  }
+  
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int plrSD_getShmName(char name[NAME_MAX]) {
   int pgid = getpgrp();
   int w = snprintf(name, NAME_MAX, "/plr_data.%d", pgid);
   if (w < 0 || w >= NAME_MAX) {
