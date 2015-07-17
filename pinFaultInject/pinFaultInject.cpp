@@ -7,29 +7,28 @@
 #include <errno.h>
 #include <pthread.h>
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 // Global variables
-//-----------------------------------------------------------------------------
 FILE *trace;
 double faultProb;
 perProcData_t *nextProcToFault = NULL;
 
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
 // Commandline switches
-//-----------------------------------------------------------------------------
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
     "o", "plrTool.out", "Specify output file name");
 KNOB<string> KnobFaultProb(KNOB_MODE_WRITEONCE, "pintool",
-    "p", "0.02", "Specify per-instruction fault injection probability");
+    "p", "0.01", "Specify per-instruction fault injection probability");
     
-//-----------------------------------------------------------------------------
-// Usage() function
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
+
 static INT32 Usage() {
   PIN_ERROR("Pintool for injecting transient faults.\n"
             + KNOB_BASE::StringKnobSummary() + "\n");
   return -1;
 }
+
+///////////////////////////////////////////////////////////////////////////////
 
 VOID getPLRShm() {
   // BANDAID: The pintool seems to access a different plrShm than the process it's
@@ -45,19 +44,23 @@ VOID getPLRShm() {
   }
   //printf("[%d] pin: &plrShm = %p, plrShm = %p\n", PIN_GetPid(), &plrShm, plrShm);
 
-  
   // Set myProcShm properly inside Pintool
   int myPid = PIN_GetPid();
-  for (int i = 0; i < plrShm->nProc; ++i) {
-    if (allProcShm[i].pid == myPid) {
-      myProcShm = &allProcShm[i];
+  if (myProcShm == NULL || myProcShm->pid != myPid) {
+    for (int i = 0; i < plrShm->nProc; ++i) {
+      if (allProcShm[i].pid == myPid) {
+        myProcShm = &allProcShm[i];
+        break;
+      }
+    }
+    if (myProcShm == NULL) {
+      fprintf(stderr, "[%d:pin] myProcShm still NULL in pintool\n", PIN_GetPid());
+      exit(1);
     }
   }
-  if (myProcShm == NULL) {
-    fprintf(stderr, "[%d:pin] myProcShm still NULL in pintool\n", PIN_GetPid());
-    exit(1);
-  }
 }
+
+///////////////////////////////////////////////////////////////////////////////
 
 VOID updateNextProcToFault(BOOL initialCall) {   
   getPLRShm();
@@ -67,19 +70,22 @@ VOID updateNextProcToFault(BOOL initialCall) {
   }
   
   // Initialize random seed
-  if (plrShm->nextFaultPid == 0) {
+  int curFaultPid = plrShm->nextFaultPid;
+  if (curFaultPid == 0) {
     plrShm->randSeed = time(NULL)+PIN_GetPid();
   }
   
-  // Only update nextFaultPid if this is the current process to fault (or none is set yet)
-  if (plrShm->nextFaultPid == 0 || !initialCall) {
+  if (curFaultPid == 0 || !initialCall) {
     double roll = (double)rand_r(&plrShm->randSeed)/RAND_MAX;
     int idx = (int)(plrShm->nProc*roll) % plrShm->nProc;
     int nextPid = allProcShm[idx].pid;
     
-    plrShm->nextFaultPid = nextPid;
-    plrShm->nextFaultIdx = idx;
-    printf("[%d:pin] Updated next proc to fault to pid %d (idx %d)\n", PIN_GetPid(), nextPid, idx);
+    if (nextPid != curFaultPid && nextPid != 0) {
+      plrShm->nextFaultPid = nextPid;
+      plrShm->nextFaultIdx = idx;
+      plrShm->processFaulted = 0;
+      printf("[%d:pin] Updated next proc to fault to pid %d (idx %d)\n", PIN_GetPid(), nextPid, idx);
+    }
   }
   
   if (initialCall) {
@@ -87,7 +93,9 @@ VOID updateNextProcToFault(BOOL initialCall) {
   }
 }
 
-ADDRINT mainLoAddr, mainHiAddr;
+///////////////////////////////////////////////////////////////////////////////
+
+ADDRINT plrLoAddr, plrHiAddr;
 VOID ImageLoad(IMG img, VOID *v) {
   // Insert a call after plr_processInit to initialize which process will
   // have a fault injected
@@ -102,29 +110,41 @@ VOID ImageLoad(IMG img, VOID *v) {
   // TODO: Check lo/hi vs start/size to see where different Pin plrShm & other global data is
   //printf("Lo 0x%lx, Hi 0x%lx, Start 0x%lx, Size 0x%x\n", IMG_LowAddress(img), IMG_HighAddress(img), IMG_StartAddress(img), IMG_SizeMapped(img));
   
-  IMG_TYPE imgType = IMG_Type(img);
-  if (imgType == IMG_TYPE_STATIC || imgType == IMG_TYPE_SHARED) {
-    if (mainHiAddr != 0) {
-      printf("[%d:pin] ERROR: pinFaultInject found 2 static/shared images\n", PIN_GetPid());
-      exit(1);
-    }
-    mainLoAddr = IMG_LowAddress(img);
-    mainHiAddr = IMG_HighAddress(img);
+  string imageName = IMG_Name(img);
+  string targetLib = "libplrPreload.so";
+  if (imageName.length() >= targetLib.length() 
+      && imageName.substr(imageName.length()-targetLib.length()) == targetLib)
+  {
+    plrLoAddr = IMG_LowAddress(img);
+    plrHiAddr = IMG_HighAddress(img);
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
 
 VOID traceCallback() {
   // Only update next fault process after that process has failed and been
   // replaced
-  pthread_mutex_lock(&plrShm->toolLock);
-  if (allProcShm[plrShm->nextFaultIdx].pid != plrShm->nextFaultPid) {
-    //printf("[%d:pin] Updating b/c allProcShm[%d].pid == %d != %d\n", PIN_GetPid(), plrShm->nextFaultIdx, allProcShm[plrShm->nextFaultIdx].pid, plrShm->nextFaultPid);
-    updateNextProcToFault(FALSE);
+  if (plrShm->processFaulted == 1) {
+    pthread_mutex_lock(&plrShm->toolLock);
+    if (allProcShm[plrShm->nextFaultIdx].pid != plrShm->nextFaultPid) {
+      updateNextProcToFault(FALSE);
+    }
+    pthread_mutex_unlock(&plrShm->toolLock);
   }
-  pthread_mutex_unlock(&plrShm->toolLock);
+  
+  // Make sure that myProcShm is pointing to the right area
+  getPLRShm();
   
   // Exit if this isn't the process to be faulted
-  if (plrShm == NULL || plrShm->nextFaultPid != PIN_GetPid()) {
+  if (plrShm->nextFaultPid != PIN_GetPid()) {
+    return;
+  }
+  
+  // Exit if this process is inside PLR code
+  // Even though plrPreload traces aren't instruments, we could be inside another
+  // library function called from PLR. This avoids injecting faults in that case.
+  if (myProcShm->insidePLR) {
     return;
   }
   
@@ -133,35 +153,40 @@ VOID traceCallback() {
   float roll = (float)rand_r(&plrShm->randSeed)/RAND_MAX;
   rollCount++;
   if (roll <= faultProb) {
+    plrShm->processFaulted = 1;
     printf("[%d:pin] Pintool killing process, %f <= %f, after %ld rolls\n", PIN_GetPid(), roll, faultProb, rollCount);
     PIN_ExitApplication(2);
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
 VOID InstrumentTrace(TRACE trace, VOID *arg) {
-  // Only instrument traces from main program, not from PLR code or other shared libs
-  // TODO: Could instrument normal (e.g. libc) shared libs, just avoid injecting faults in PLR code
+  // plrLoAddr/plrHiAddr used to avoid instrumenting traces from plrPreload library
   ADDRINT addr = TRACE_Address(trace);
-  if (TRACE_Original(trace) && addr >= mainLoAddr && addr <= mainHiAddr) {
+  if (TRACE_Original(trace) && (addr < plrLoAddr || addr > plrHiAddr)) {
     TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR)traceCallback, IARG_END);
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
 VOID ApplicationStart(VOID *arg) {
+  // The "inside PLR" flag is initialized to true during PLR startup if running with the
+  // fault injection Pintool, so that syscalls related to Pin startup aren't emulated.
+  // This clears that initial flag.
   getPLRShm();
   plr_clearInsidePLR();
 }
 
-//-----------------------------------------------------------------------------
-// Fini() function
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
+
 void Fini(INT32 code, void *v) {
   //fclose(trace);
 }
 
-//-----------------------------------------------------------------------------
-// main() function
-//-----------------------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////
+
 int main(int argc, char *argv[]) {
   // PIN_InitSymbols is required to search RTNs by name in ImageLoad
   PIN_InitSymbols();
@@ -181,14 +206,9 @@ int main(int argc, char *argv[]) {
   
   //trace = fopen(KnobOutputFile.Value().c_str(), "w");
   
-  // Register Fini to be called when the application exits
   PIN_AddFiniFunction(Fini, NULL);
-  
-  // Register ImageLoad to be called when an image is loaded
   IMG_AddInstrumentFunction(ImageLoad, NULL);
-  
   TRACE_AddInstrumentFunction(InstrumentTrace, NULL);
-  
   PIN_AddApplicationStartFunction(ApplicationStart, NULL);
   
   // Start the program, never returns

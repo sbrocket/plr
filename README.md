@@ -12,7 +12,6 @@ More complete description TBD
 * Redundant processes receiving signals at different times can lead to nondeterminism and issues, especially if a signal interrupts a syscall.
 
 ## Todo List
-* Use "inside PLR code" per-process flag to determine whether to inject faults
 * Add better logging functionality to PLR. Use env var to set logging level.
 * STDIN & STDOUT redirection between figurehead to/from redundant processes
 * Clean up fault cases like multiple faulted processes to exit PLR gracefully

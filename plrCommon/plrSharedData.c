@@ -121,12 +121,12 @@ int plrSD_initProcData(perProcData_t *procShm) {
 ///////////////////////////////////////////////////////////////////////////////
 
 int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *src) {
-  // Initialize values in procShm
-  plrSD_initProcData(procShm);
-  
   // Copy insidePLR state from parent
   procShm->insidePLR = src->insidePLR;
   procShm->insidePLRSetOnce = src->insidePLRSetOnce;
+  
+  // Initialize values in procShm
+  plrSD_initProcData(procShm);
   
   // Copy stored syscall arguments to from parent
   memcpy(&procShm->syscallArgs, &src->syscallArgs, sizeof(syscallArgs_t));
