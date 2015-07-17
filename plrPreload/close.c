@@ -10,7 +10,10 @@ int close(int fd) {
   libc_func(close, int, int);
     
   int ret;
-  if (!plr_checkInsidePLR()) {
+  if (plr_checkInsidePLR()) {
+    // If already inside PLR code, just call original syscall & return
+    ret = _close(fd);
+  } else {
     plr_setInsidePLR();
     printf("[%d:close] Close fd %d\n", getpid(), fd);
     
@@ -24,9 +27,6 @@ int close(int fd) {
     ret = _close(fd);
     
     plr_clearInsidePLR();
-  } else {
-    // If already inside PLR code, just call original syscall & return
-    ret = _close(fd);
   }
   
   return ret;
