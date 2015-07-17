@@ -19,8 +19,8 @@
         <File name="plrCommon\timeUtil.h" />
     </Project>
     <Project name="plrPreload">
-        <File name="plrPreload\crc32c_util.c" />
-        <File name="plrPreload\crc32c_util.h" />
+        <File name="plrPreload\crc32_util.c" />
+        <File name="plrPreload\crc32_util.h" />
         <File name="plrPreload\libc_func.c" />
         <File name="plrPreload\libc_func.h" />
         <File name="plrPreload\Makefile" />

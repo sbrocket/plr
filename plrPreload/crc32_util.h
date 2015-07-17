@@ -1,5 +1,5 @@
-#ifndef CRC32C_UTIL_H
-#define CRC32C_UTIL_H
+#ifndef CRC32_UTIL_H
+#define CRC32_UTIL_H
 #ifdef __cplusplus
 extern "C" {
 #endif

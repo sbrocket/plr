@@ -5,7 +5,7 @@
 #include <string.h>
 #include "plr.h"
 #include "libc_func.h"
-#include "crc32c_util.h"
+#include "crc32_util.h"
 
 #include <stdio.h>
 #include <unistd.h>

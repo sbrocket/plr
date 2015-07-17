@@ -2,7 +2,6 @@
 #include <errno.h>
 #include "plr.h"
 #include "libc_func.h"
-#include "crc32c_util.h"
 
 #include <stdio.h>
 

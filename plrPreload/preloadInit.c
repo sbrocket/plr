@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "plr.h"
-#include "crc32c_util.h"
+#include "crc32_util.h"
 
 __attribute__((constructor))
 void initPLRPreload() {
