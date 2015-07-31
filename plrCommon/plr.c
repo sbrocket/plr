@@ -62,6 +62,32 @@ int plr_replaceProcessIdx(int idx);
 
 ///////////////////////////////////////////////////////////////////////////////
 
+void plr_refreshSharedData() {
+  if (plrShm == NULL) {
+    if (plrSD_acquireSharedData() < 0) {
+      fprintf(stderr, "Error: plrSD_acquireSharedData() failed\n");
+      exit(1);
+    }
+  }
+
+  // Check that myProcShm is set properly
+  int myPid = getpid();
+  if (myProcShm == NULL || myProcShm->pid != myPid) {
+    for (int i = 0; i < plrShm->nProc; ++i) {
+      if (allProcShm[i].pid == myPid) {
+        myProcShm = &allProcShm[i];
+        break;
+      }
+    }
+    if (myProcShm == NULL) {
+      fprintf(stderr, "[%d] Failed to locate myProcShm\n", myPid);
+      exit(1);
+    }
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 int plr_figureheadInit(int nProc, int pintoolMode) {
   // Set figurehead process as subreaper so grandchild processes
   // get reparented to it, instead of init
@@ -96,6 +122,12 @@ int plr_processInit() {
   if (plrSD_acquireSharedData() < 0) {
     plrlog(LOG_ERROR, "Error: PLR shared data acquire failed\n");
     return -1;
+  }
+  // If plr_processInit ran once, don't repeat, just get the existing shared data.
+  if (plrShm->didProcessInit) {
+    plr_refreshSharedData();
+    g_insidePLRInternal = 0;
+    return 0;
   }
   //plrlog(LOG_DEBUG, [%d] plr: &plrShm = %p, plrShm = %p\n", getpid(), &plrShm, plrShm);
   
@@ -132,10 +164,10 @@ int plr_processInit() {
     }
   }
   
+  plrShm->didProcessInit = 1;
   g_insidePLRInternal = 0;
-  if (plrShm->insidePLRInitTrue && !myProcShm->insidePLRSetOnce) {
-    myProcShm->insidePLRSetOnce = 1;
-    plr_setInsidePLR();
+  if (plrShm->insidePLRInitTrue) {
+    myProcShm->insidePLR = 1;
   }
   
   pthread_mutex_unlock(&plrShm->lock);

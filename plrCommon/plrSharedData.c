@@ -124,7 +124,6 @@ int plrSD_initProcData(perProcData_t *procShm) {
 int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *src) {
   // Copy insidePLR state from parent
   procShm->insidePLR = src->insidePLR;
-  procShm->insidePLRSetOnce = src->insidePLRSetOnce;
   
   // Initialize values in procShm
   plrSD_initProcData(procShm);

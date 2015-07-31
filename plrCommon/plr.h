@@ -7,6 +7,9 @@ extern "C" {
 #include <sys/types.h>
 #include "plrCompare.h"
 
+// Update the global shared data variables (if needed)
+void plr_refreshSharedData();
+
 int plr_figureheadInit(int nProc, int pintoolMode);
 int plr_figureheadExit();
 

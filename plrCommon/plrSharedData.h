@@ -22,8 +22,6 @@ typedef struct {
   int extraShmMapped;
   // Boolean flag, indicates that currently inside PLR code
   int insidePLR;
-  // Boolean flag, indicates insidePLR flag set once to true
-  int insidePLRSetOnce;
 } perProcData_t;
 
 typedef struct {
@@ -42,6 +40,8 @@ typedef struct {
   int extraShmSize;
   // Boolean flag, indicates that "insidePLR" flag should start out set
   int insidePLRInitTrue;
+  // Boolean flag, indicates that process init has run once
+  int didProcessInit;
   
   // Fault injection pintool data
   // The following data is added here for convenience, to avoid creating a separate shared 
