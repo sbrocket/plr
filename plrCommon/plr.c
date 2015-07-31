@@ -88,7 +88,7 @@ void plr_refreshSharedData() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_figureheadInit(int nProc, int pintoolMode) {
+int plr_figureheadInit(int nProc, int pintoolMode, int pid) {
   // Set figurehead process as subreaper so grandchild processes
   // get reparented to it, instead of init
   if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {
@@ -100,6 +100,7 @@ int plr_figureheadInit(int nProc, int pintoolMode) {
     plrlog(LOG_ERROR, "Error: PLR Shared data init failed\n");
     return -1;
   }
+  plrShm->figureheadPid = pid;
   plrShm->insidePLRInitTrue = pintoolMode;
   return 0;
 }

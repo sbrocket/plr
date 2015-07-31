@@ -25,6 +25,8 @@ typedef struct {
 } perProcData_t;
 
 typedef struct {
+  // Figurehead process PID
+  int figureheadPid;
   // Total number of redundant processes
   int nProc;
   // Index of current condition variable to wait in.

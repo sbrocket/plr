@@ -82,7 +82,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   
-  if (plr_figureheadInit(g_numRedunProc, g_pintoolMode) < 0) {
+  int figPid = getpid();
+  if (plr_figureheadInit(g_numRedunProc, g_pintoolMode, figPid) < 0) {
     fprintf(stderr, "Error: PLR figurehead init failed\n");
     return 1;
   }
