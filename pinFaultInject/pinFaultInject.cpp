@@ -177,7 +177,7 @@ VOID ApplicationStart(VOID *arg) {
   // fault injection Pintool, so that syscalls related to Pin startup aren't emulated.
   // This clears that initial flag.
   getPLRShm();
-  plr_clearInsidePLR();
+  //plr_clearInsidePLR();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -211,7 +211,7 @@ int main(int argc, char *argv[]) {
   IMG_AddInstrumentFunction(ImageLoad, NULL);
   TRACE_AddInstrumentFunction(InstrumentTrace, NULL);
   PIN_AddApplicationStartFunction(ApplicationStart, NULL);
-  
+    
   // Start the program, never returns
   PIN_StartProgram();
   

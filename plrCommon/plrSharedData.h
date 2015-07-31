@@ -64,13 +64,12 @@ extern perProcData_t *myProcShm;
 // extraShm is a pointer to an area of shared memory that
 // can change dynamically, as needed to copy syscall data
 // between processes, throughout the life of a PLR process group
-extern void *extraShm;
+extern char *extraShm;
 
 // Initialize the shared data area for the first time.
 int plrSD_initSharedData(int nProc);
 
-// Map the existing shared data area and allocate an entry in
-// allProcShm to the current process (as myProcShm).
+// Map the existing shared data area, initializing plrShm & allProcShm
 int plrSD_acquireSharedData();
 
 // Destroy the shared data area. No other processes should call

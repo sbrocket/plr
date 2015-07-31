@@ -58,8 +58,8 @@ $(LIBNAMES): %: | $(LIBDIR)
 	ln -sf ../$@/lib$@.so $(LIBDIR)
   
 pinFaultInject: | $(LIBDIR)
-	$(MAKE) -C $@ $@.so
-	ln -sf ../$@/$@.so $(LIBDIR)
+#	$(MAKE) -C $@ $@.so
+#	ln -sf ../$@/$@.so $(LIBDIR)
 
 $(LIBDIR):
 	mkdir -p $@

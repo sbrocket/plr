@@ -11,6 +11,7 @@
 
 #include "plr.h"
 #include "plrLog.h"
+#include "pin.H"
 #include "plrSharedData.h"
 #include "plrCompare.h"
 #include "timeUtil.h"
@@ -567,13 +568,20 @@ int plr_replaceProcessIdx(int idx) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// PIN_ClientFork is missing from Pin headers, adding definition here
+namespace LEVEL_PINCLIENT {
+  extern OS_THREAD_ID PIN_ClientFork();
+}
+
 int plr_forkNewProcess(perProcData_t *newProcShm) {
   // Copy parent's procShm here, to make sure that child gets a copy of the data
   // as it is when this function is called, not when it gets the lock later
   perProcData_t parentProcShmCpy;
   memcpy(&parentProcShmCpy, myProcShm, sizeof(perProcData_t));
   
-  int childPid = fork();
+  printf("[%d] Doing fork\n", getpid());
+  int childPid = PIN_ClientFork();//fork();
+  printf("[%d] Did fork\n", getpid());
   if (childPid < 0) {
     perror("fork");
     exit(1);

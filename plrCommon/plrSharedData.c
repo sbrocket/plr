@@ -19,7 +19,7 @@
 plrData_t *plrShm = NULL;
 perProcData_t *allProcShm = NULL;
 perProcData_t *myProcShm = NULL;
-void *extraShm = NULL;
+char *extraShm = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private functions

@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <limits.h>
-#include "plr.h"
+#include "plrCommon.h"
 #include "plrLog.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -154,7 +154,7 @@ int startFirstProcess(int argc, char **argv) {
     char **cArgv;
     if (g_pintoolMode) {
       // Build child argv by appending pintool injection to front of command
-      char *pinArgv[4] = {"pin64", "-t", "lib/pinFaultInject.so", "--"};
+      char *pinArgv[4] = {"pin64", "-t", "lib/libplrPintool.so", "--"};
       int cArgc = 4+argc+1;
       cArgv = malloc(cArgc*sizeof(char*));
       

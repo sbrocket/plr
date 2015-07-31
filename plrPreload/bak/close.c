@@ -7,6 +7,8 @@
 #include <stdio.h>
 
 int close(int fd) {
+  //plr_refreshSharedData();
+  
   // Get libc syscall function pointer & offset in image
   libc_func(close, int, int);
     

@@ -18,6 +18,8 @@ typedef struct {
 // Common function to check syscall arguments & call libc for both open() and
 // open64(), since they're otherwise identical
 int commonOpen(const char *fncName, const char *pathname, int flags, va_list argl) {
+  //plr_refreshSharedData();
+  
   // Get libc syscall function pointer & offset in image
   libc_func_2(open, fncName, int, const char *, int, ...);
   

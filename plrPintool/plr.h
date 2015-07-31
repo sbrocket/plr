@@ -10,9 +10,6 @@ extern "C" {
 // Update the global shared data variables (if needed)
 void plr_refreshSharedData();
 
-int plr_figureheadInit(int nProc, int pintoolMode, int pid);
-int plr_figureheadExit();
-
 // plr_processInit() should only be called once, by the first redundant
 // process started by the figurehead. It will acquire the shared data area
 // and fork the other redundant processes.
@@ -55,6 +52,8 @@ int plr_copyFromShm(void *dest, size_t length, size_t offset);
 void plr_setInsidePLR();
 void plr_clearInsidePLR();
 int plr_checkInsidePLR();
+
+void plr_printInfo();
 
 #ifdef __cplusplus
 }
