@@ -3,13 +3,17 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
+#include <errno.h>
 #include "plr.h"
 #include "plrLog.h"
 #include "libc_func.h"
 #include "crc32_util.h"
 
-#include <stdio.h>
-#include <unistd.h>
+typedef struct {
+  int err;
+  int ret;
+} openShmData_t;
 
 // Common function to check syscall arguments & call libc for both open() and
 // open64(), since they're otherwise identical
@@ -24,9 +28,16 @@ int commonOpen(const char *fncName, const char *pathname, int flags, va_list arg
   }
   
   // If already inside PLR code, just call original syscall & return
-  int setInside = 0;
-  if (!plr_checkInsidePLR()) {
-    setInside = 1;
+  if (plr_checkInsidePLR()) {
+    // Call original libc function
+    int ret;
+    if (flags & O_CREAT) {
+      ret = _open(pathname, flags, mode);
+    } else {
+      ret = _open(pathname, flags);
+    }
+    return ret;
+  } else {
     plr_setInsidePLR();
     plrlog(LOG_SYSCALL, "[%d:%s] Open file '%s'\n", getpid(), fncName, pathname);
     
@@ -37,20 +48,53 @@ int commonOpen(const char *fncName, const char *pathname, int flags, va_list arg
       .arg[2] = mode
     };
     plr_checkSyscallArgs(&args);
-  }
-  
-  // Call original libc function
-  int ret;
-  if (flags & O_CREAT) {
-    ret = _open(pathname, flags, mode);
-  } else {
-    ret = _open(pathname, flags);
-  }
-  
-  if (setInside) {
+    
+    // Nested function actually performed by master process only
+    // If O_EXCL specified in flags, master process creates file (or errors out)
+    int ret;
+    int masterAct() {
+      // Hacky workaround...this makes sure the fd for the extraShm area
+      // is open before calling open on other files, to prevent master & slave
+      // fd's getting out of sync
+      plr_copyToShm(NULL, 0, 0);
+      
+      // Call original libc function
+      if (flags & O_CREAT) {
+        ret = _open(pathname, flags, mode);
+      } else {
+        ret = _open(pathname, flags);
+      }
+      
+      // Store return value in shared memory for slave processes
+      openShmData_t shmDat = { .err = errno, .ret = ret };
+      plr_copyToShm(&shmDat, sizeof(shmDat), 0);
+      return 0;
+    }
+    // All processes call plr_masterAction() to synchronize at this point
+    plr_masterAction(masterAct);
+    
+    if (!plr_isMasterProcess()) {
+      // Slaves copy return values from shared memory
+      openShmData_t shmDat;
+      plr_copyFromShm(&shmDat, sizeof(shmDat), 0);
+      
+      // If error occurred in master, just return master's values
+      if (shmDat.ret < 0) {
+        ret = shmDat.ret;
+        errno = shmDat.err;
+      } else {
+        // Call original libc function, removing O_EXCL flag if it is given
+        if (flags & O_CREAT) {
+          ret = _open(pathname, flags & ~O_EXCL, mode);
+        } else {
+          ret = _open(pathname, flags & ~O_EXCL);
+        }
+      }
+    }
+    
     plr_clearInsidePLR();
+    return ret;
   }
-  return ret;
 }
 
 int open(const char *pathname, int flags, ...) {
