@@ -25,8 +25,6 @@ ssize_t write(int fd, const void *buf, size_t count) {
     plr_setInsidePLR();
     plrlog(LOG_SYSCALL, "[%d:write] Write %ld bytes to fd %d\n", getpid(), count, fd);
     
-    // Not comparing buf argument, different processes could have different
-    // VM mappings and still be valid
     syscallArgs_t args = {
       .addr = _off_write,
       .arg[0] = fd,
