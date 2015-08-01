@@ -123,12 +123,14 @@ int plrSD_initProcData(perProcData_t *procShm) {
 
 int plrSD_initProcDataAsCopy(perProcData_t *procShm, perProcData_t *src) {
   // Copy insidePLR state from parent
+  // NOTE: Must keep this before plrSD_initProcData, which calls getpid()
   procShm->insidePLR = src->insidePLR;
   
   // Initialize values in procShm
   plrSD_initProcData(procShm);
   
-  // Copy stored syscall arguments to from parent
+  // Copy stored syscall arguments & other state from parent
+  procShm->shmFd = src->shmFd;
   memcpy(&procShm->syscallArgs, &src->syscallArgs, sizeof(syscallArgs_t));
   
   return 0;
@@ -193,13 +195,13 @@ static int plrSD_openShmFile(int oflag, mode_t mode) {
 ///////////////////////////////////////////////////////////////////////////////
 
 int plrSD_resizeExtraShm(int minSize) {
+  if (myProcShm->shmFd == -1) {
+    myProcShm->shmFd = plrSD_openShmFile(O_RDWR, 0);
+  }
+  
   // Expand the global size of the extra shared memory area, if needed
   if (minSize > plrShm->extraShmSize) {
     plrShm->extraShmSize = minSize;
-    
-    if (myProcShm->shmFd == -1) {
-      myProcShm->shmFd = plrSD_openShmFile(O_RDWR, 0);
-    }
     
     // Grow shmFd to new max size
     int shmSize = plrSD_extraShmOffset() + minSize;
@@ -215,12 +217,12 @@ int plrSD_resizeExtraShm(int minSize) {
 ///////////////////////////////////////////////////////////////////////////////
 
 int plrSD_refreshExtraShm() {
+  if (myProcShm->shmFd == -1) {
+    myProcShm->shmFd = plrSD_openShmFile(O_RDWR, 0);
+  }
+  
   // Expand the mapped size for this process, if needed
   if (myProcShm->extraShmMapped < plrShm->extraShmSize) {
-    if (myProcShm->shmFd == -1) {
-      myProcShm->shmFd = plrSD_openShmFile(O_RDWR, 0);
-    }
-    
     if (myProcShm->extraShmMapped == 0) {
       extraShm = mmap(NULL, plrShm->extraShmSize, PROT_READ | PROT_WRITE, MAP_SHARED, myProcShm->shmFd, plrSD_extraShmOffset());
       if (extraShm == MAP_FAILED) {
