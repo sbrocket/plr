@@ -425,16 +425,18 @@ int plr_waitBarrier(int (*actionPtr)(void), waitActionType_t actionType) {
       }
       
       // If barrier action succeeds, wake up all other processes & leave barrier
-      if (actionSuccess && myProcShm->waitIdx >= 0) {
-        // Shift curWaitIdx to other value so subsequent plr_wait calls use the
-        // other condition variable
-        plrShm->curWaitIdx = (plrShm->curWaitIdx) ? 0 : 1;
-        
-        // Reset all wait flags and wake up all other processes
-        //printf("[%d] Signaling all processes to wake up for idx %d\n", getpid(), waitIdx);
-        for (int i = 0; i < plrShm->nProc; ++i) {
-          pthread_cond_signal(&allProcShm[i].cond[waitIdx]);
-          allProcShm[i].waitIdx = -1;
+      if (actionSuccess) {
+        if (myProcShm->waitIdx >= 0) {
+          // Shift curWaitIdx to other value so subsequent plr_wait calls use the
+          // other condition variable
+          plrShm->curWaitIdx = (plrShm->curWaitIdx) ? 0 : 1;
+          
+          // Reset all wait flags and wake up all other processes
+          //printf("[%d] Signaling all processes to wake up for idx %d\n", getpid(), waitIdx);
+          for (int i = 0; i < plrShm->nProc; ++i) {
+            pthread_cond_signal(&allProcShm[i].cond[waitIdx]);
+            allProcShm[i].waitIdx = -1;
+          }
         }
         
         // Break out of wait loop
