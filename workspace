@@ -33,6 +33,9 @@
         <File name="plrPreload\close.c" />
         <File name="plrPreload\unlink.c" />
         <File name="plrPreload\getpid.c" />
+        <File name="plrPreload\printf.c" />
+        <File name="plrPreload\fwrite.c" />
+        <File name="plrPreload\fgetc.c" />
     </Project>
     <Project name="pinFaultInject">
         <File name="pinFaultInject\makefile" />
