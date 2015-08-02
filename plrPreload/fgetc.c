@@ -35,12 +35,14 @@ int com_fgetc(const char *fncName, FILE *stream) {
     
     // Nested function actually performed by master process only
     int ret;
+    fgetcShmData_t shmDat;
     int masterAct() {
       // Call original libc function
       ret = _fgetc(stream);
       
       // Use ftell to get new file offset
-      fgetcShmData_t shmDat = { .err = errno, .ret = ret };
+      shmDat.err = errno;
+      shmDat.ret = ret;
       shmDat.offs = ftell(stream);
       shmDat.eof = feof(stream);
       shmDat.ferr = ferror(stream);
@@ -51,7 +53,7 @@ int com_fgetc(const char *fncName, FILE *stream) {
       if (shmDat.ferr) {
         // Not sure how to handle passing ferror's to slaves yet, no way 
         // to manually set error state
-        plrlog(LOG_ERROR, "[%d:%s] ferror (%d) occurred (%d)\n", getpid(), fncName, shmDat.ferr, fn);
+        plrlog(LOG_ERROR, "[%d:%s] ERROR: ferror (%d) occurred (%d)\n", getpid(), fncName, shmDat.ferr, fn);
         exit(1);
       }
       
@@ -62,7 +64,6 @@ int com_fgetc(const char *fncName, FILE *stream) {
     
     if (!plr_isMasterProcess()) {
       // Slaves copy return values from shared memory
-      fgetcShmData_t shmDat;
       plr_copyFromShm(&shmDat, sizeof(shmDat), 0);
       
       // Slaves seek to new fd offset
@@ -70,22 +71,37 @@ int com_fgetc(const char *fncName, FILE *stream) {
       // may have been forked from each other after the fd was opened, in which
       // case the fd & its offset are shared, and that would advance more than needed
       fseek(stream, shmDat.offs, SEEK_SET);
+      
+      // Necessary to manually reset EOF flag because fseek clears it
       if (shmDat.eof) {
         // fgetc at EOF to set feof indicator
-        if (_fgetc(stream) != -1) {
-          plrlog(LOG_ERROR, "[%d:%s] fgetc to cause feof actually read data\n", getpid(), fncName);
+        int c;
+        if ((c = _fgetc(stream)) != EOF) {
+          const char *fmt = "[%d:%s] ERROR: fgetc to cause EOF actually got data (%c %d), ftell = %d, feof = %d\n";
+          plrlog(LOG_ERROR, fmt, getpid(), fncName, c, c, ftell(stream), feof(stream));
           exit(1);
         }
       }
       if (shmDat.ferr) {
-        plrlog(LOG_ERROR, "[%d:%s] ferror (%d) from master (%d)\n", getpid(), fncName, shmDat.ferr, fn);
+        plrlog(LOG_ERROR, "[%d:%s] ERROR: ferror (%d) from master (%d)\n", getpid(), fncName, shmDat.ferr, fn);
         exit(1);
       }
-      
-      // Return same value & errno as master
-      ret = shmDat.ret;
-      errno = shmDat.err;
     }
+    
+    // TEMPORARY
+    // Slave processes sometimes end up with the wrong file offset, even after SEEK_SET
+    // Compare file state at exit to make sure everything is consistent
+    // Piggybacking off checkSyscallArgs mechanism to do this
+    syscallArgs_t exitState = {
+      .arg[0] = ftell(stream),
+      .arg[1] = feof(stream),
+      .arg[2] = ferror(stream),
+    };
+    plr_checkSyscallArgs(&exitState);
+    
+    // All procs return same value & errno
+    ret = shmDat.ret;
+    errno = shmDat.err;
     
     plr_clearInsidePLR();
     return ret;
