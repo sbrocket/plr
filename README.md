@@ -13,7 +13,6 @@ More complete description TBD
 
 ## Todo List
 * Add instruction-level fault injection to Pintool.
-* Add better logging functionality to PLR. Use env var to set logging level.
 * STDIN & STDOUT redirection between figurehead to/from redundant processes
 * Clean up fault cases like multiple faulted processes to exit PLR gracefully
 

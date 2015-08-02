@@ -1,7 +1,5 @@
 // _GNU_SOURCE needed for mremap
 #define _GNU_SOURCE
-#include "plrSharedData.h"
-#include "pthreadUtil.h"
 #include <unistd.h>
 #include <limits.h>
 #include <stdio.h>
@@ -12,6 +10,9 @@
 #include <fcntl.h>
 #include <string.h>
 #include <pthread.h>
+#include "plrLog.h"
+#include "plrSharedData.h"
+#include "pthreadUtil.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Global data
@@ -145,11 +146,11 @@ int plrSD_freeProcData(perProcData_t *procShm) {
   // Wake up any waiting threads & destroy condition variables
   for (int i = 0; i < 2; ++i) {
     if (pthread_cond_broadcast(&procShm->cond[i]) != 0) {
-      fprintf(stderr, "pthread_cond_broadcast failed\n");
+      plrlog(LOG_ERROR, "pthread_cond_broadcast failed\n");
       return -1;
     }
     if (pthread_cond_destroy(&procShm->cond[i]) != 0) {
-      fprintf(stderr, "pthread_cond_destroy failed\n");
+      plrlog(LOG_ERROR, "pthread_cond_destroy failed\n");
       return -1;
     }
   }

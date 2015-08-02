@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include "plr.h"
+#include "plrLog.h"
 #include "libc_func.h"
 #include "crc32_util.h"
 
@@ -27,7 +28,7 @@ int commonOpen(const char *fncName, const char *pathname, int flags, va_list arg
   if (!plr_checkInsidePLR()) {
     setInside = 1;
     plr_setInsidePLR();
-    printf("[%d:%s] Open file '%s'\n", getpid(), fncName, pathname);
+    plrlog(LOG_SYSCALL, "[%d:%s] Open file '%s'\n", getpid(), fncName, pathname);
     
     syscallArgs_t args = {
       .addr = _off_open,

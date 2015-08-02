@@ -8,6 +8,7 @@
 #include <string.h>
 #include <limits.h>
 #include "plr.h"
+#include "plrLog.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Global variables & defines
@@ -77,7 +78,7 @@ int main(int argc, char *argv[]) {
   char **progArgv = &argv[optind];
   
   if (g_ldpreloadMode && getenv("LD_PRELOAD") != NULL) {
-    printf("Error: LD_PRELOAD already set when running PLR in LD_PRELOAD mode\n");
+    fprintf(stderr, "Error: LD_PRELOAD already set when running PLR in LD_PRELOAD mode\n");
     return 1;
   }
   
@@ -102,18 +103,18 @@ int main(int argc, char *argv[]) {
     int pid = wait(&status);
     if (pid < 0) {
       if (errno == ECHILD) {
-        printf("PLR: All children exited\n");
+        plrlog(LOG_DEBUG, "PLR: All children exited\n");
         break;
       } else {
         perror("wait");
         return 1;
       }
     } else if (WIFEXITED(status)) {
-      printf("Pid %d exited normally with status %d\n", pid, WEXITSTATUS(status));
+      plrlog(LOG_DEBUG, "Pid %d exited normally with status %d\n", pid, WEXITSTATUS(status));
     } else if (WIFSIGNALED(status)) {
-      printf("Pid %d exited with signal %d\n", pid, WTERMSIG(status));
+      plrlog(LOG_DEBUG, "Pid %d exited with signal %d\n", pid, WTERMSIG(status));
     } else {
-      printf("Pid %d exited for unknown reason\n", pid);
+      plrlog(LOG_DEBUG, "Pid %d exited for unknown reason\n", pid);
     }
   }
   

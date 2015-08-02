@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include "plr.h"
+#include "plrLog.h"
 #include "libc_func.h"
 #include "crc32_util.h"
 
@@ -22,7 +23,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
     return _write(fd, buf, count);
   } else {
     plr_setInsidePLR();
-    printf("[%d:write] Write %ld bytes to fd %d\n", getpid(), count, fd);
+    plrlog(LOG_SYSCALL, "[%d:write] Write %ld bytes to fd %d\n", getpid(), count, fd);
     
     // Not comparing buf argument, different processes could have different
     // VM mappings and still be valid

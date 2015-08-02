@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include "plr.h"
+#include "plrLog.h"
 #include "libc_func.h"
 
 #include <stdio.h>
@@ -15,7 +16,7 @@ int close(int fd) {
     ret = _close(fd);
   } else {
     plr_setInsidePLR();
-    printf("[%d:close] Close fd %d\n", getpid(), fd);
+    plrlog(LOG_SYSCALL, "[%d:close] Close fd %d\n", getpid(), fd);
     
     syscallArgs_t args = {
       .addr = _off_close,

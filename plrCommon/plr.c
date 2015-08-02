@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "plr.h"
+#include "plrLog.h"
 #include "plrSharedData.h"
 #include "plrCompare.h"
 #include "timeUtil.h"
@@ -65,12 +66,12 @@ int plr_figureheadInit(int nProc, int pintoolMode) {
   // Set figurehead process as subreaper so grandchild processes
   // get reparented to it, instead of init
   if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {
-    fprintf(stderr, "Error: prctl PR_SET_CHILD_SUBREAPER failed\n");
+    plrlog(LOG_ERROR, "Error: prctl PR_SET_CHILD_SUBREAPER failed\n");
     return -1;
   }
   
   if (plrSD_initSharedData(nProc) < 0) {
-    fprintf(stderr, "Error: PLR Shared data init failed\n");
+    plrlog(LOG_ERROR, "Error: PLR Shared data init failed\n");
     return -1;
   }
   plrShm->insidePLRInitTrue = pintoolMode;
@@ -81,7 +82,7 @@ int plr_figureheadInit(int nProc, int pintoolMode) {
 
 int plr_figureheadExit() {
   if (plrSD_cleanupSharedData() < 0) {
-    fprintf(stderr, "Error: PLR shared data cleanup failed\n");
+    plrlog(LOG_ERROR, "Error: PLR shared data cleanup failed\n");
     return -1;
   }
   return 0;
@@ -93,13 +94,13 @@ int plr_processInit() {
   g_insidePLRInternal = 1;
   
   if (plrSD_acquireSharedData() < 0) {
-    fprintf(stderr, "Error: PLR shared data acquire failed\n");
+    plrlog(LOG_ERROR, "Error: PLR shared data acquire failed\n");
     return -1;
   }
-  //printf("[%d] plr: &plrShm = %p, plrShm = %p\n", getpid(), &plrShm, plrShm);
+  //plrlog(LOG_DEBUG, [%d] plr: &plrShm = %p, plrShm = %p\n", getpid(), &plrShm, plrShm);
   
   if (myProcShm) {
-    printf("[%d] Called init but already has myProcShm\n", getpid());
+    plrlog(LOG_DEBUG, "[%d] Called init but already has myProcShm\n", getpid());
     return 0;
   }
   
@@ -118,7 +119,7 @@ int plr_processInit() {
     int iPid = allProcShm[i].pid;
     if (iPid == 0) {
       if (plr_forkNewProcess(&allProcShm[i]) < 0) {
-        fprintf(stderr, "[%d] plr_forkNewProcess failed\n", myPid);
+        plrlog(LOG_ERROR, "[%d] plr_forkNewProcess failed\n", myPid);
       }
       if (myProcShm == &allProcShm[i]) {
         // This is the child that was just created, break out of loop
@@ -150,7 +151,7 @@ int plr_checkSyscallArgs(const syscallArgs_t *args) {
   
   // Wait for all processes to reach this barrier, then compare all syscall arguments
   if (plr_waitBarrier(&plr_checkSyscallArgs_act, WAIT_ACTION_ANY) < 0) {
-    fprintf(stderr, "Error: plr_waitBarrier failed\n");
+    plrlog(LOG_ERROR, "Error: plr_waitBarrier failed\n");
     exit(1);
   }
   
@@ -202,20 +203,20 @@ int plr_checkSyscallArgs_act() {
     if (myProcShm == &allProcShm[badProc]) {
       // Detected current process as faulted, need to rerun action on
       // a different (good) process so it can be replaced
-      printf("[%d] Current process is bad!\n", getpid());
+      plrlog(LOG_DEBUG, "[%d] Current process is bad!\n", getpid());
       return 1;
     } else {
       // Replace bad process with copy of current process
-      printf("[%d] Replacing faulted pid %d\n", getpid(), allProcShm[badProc].pid);
+      plrlog(LOG_DEBUG, "[%d] Replacing faulted pid %d\n", getpid(), allProcShm[badProc].pid);
       if (plr_replaceProcessIdx(badProc) < 0) {
-        fprintf(stderr, "Error: plr_replaceProcessIdx failed\n");
+        plrlog(LOG_ERROR, "Error: plr_replaceProcessIdx failed\n");
         return -1;
       }
       return 0;
     }
   } else {
     // Multiple disagreements detected
-    fprintf(stderr, "[%d] No processes agree with each other! Unrecoverable fault\n", getpid());
+    plrlog(LOG_DEBUG, "[%d] No processes agree with each other! Unrecoverable fault\n", getpid());
     return -1;
   }
 }
@@ -238,7 +239,7 @@ int plr_masterAction(int (*actionPtr)(void)) {
   // Wait for all processes to reach this barrier, then master process will
   // run the provided function
   if (plr_waitBarrier(actionPtr, WAIT_ACTION_MASTER) < 0) {
-    fprintf(stderr, "Error: plr_waitBarrier failed\n");
+    plrlog(LOG_ERROR, "Error: plr_waitBarrier failed\n");
     exit(1);
   }
   
@@ -250,13 +251,13 @@ int plr_masterAction(int (*actionPtr)(void)) {
 int plr_copyToShm(const void *src, size_t length, size_t offset) {
   // First resize extraShm area so that it's at least as big as needed
   if (plrSD_resizeExtraShm(offset+length) < 0) {
-    fprintf(stderr, "[%d] Error: plrSD_resizeExtraShm failed\n", getpid());
+    plrlog(LOG_ERROR, "[%d] Error: plrSD_resizeExtraShm failed\n", getpid());
     exit(1);
   }
   
   // Refresh this process's extraShm mapping
   if (plrSD_refreshExtraShm() < 0) {
-    fprintf(stderr, "[%d] Error: plrSD_refreshExtraShm failed\n", getpid());
+    plrlog(LOG_ERROR, "[%d] Error: plrSD_refreshExtraShm failed\n", getpid());
     exit(1);
   }
   
@@ -270,7 +271,7 @@ int plr_copyToShm(const void *src, size_t length, size_t offset) {
 int plr_copyFromShm(void *dest, size_t length, size_t offset) {
   // Refresh this process's extraShm mapping
   if (plrSD_refreshExtraShm() < 0) {
-    fprintf(stderr, "[%d] Error: plrSD_refreshExtraShm failed\n", getpid());
+    plrlog(LOG_ERROR, "[%d] Error: plrSD_refreshExtraShm failed\n", getpid());
     exit(1);
   }
   
@@ -438,7 +439,7 @@ int plr_waitBarrier(int (*actionPtr)(void), waitActionType_t actionType) {
       // Loop again to make sure timer didn't expire while last proc was waiting
       watchdogExpired = 1; 
     } else if (ret != 0) {
-      fprintf(stderr, "[%d] pthread_cond_timedwait returned %d\n", getpid(), ret);
+      plrlog(LOG_ERROR, "[%d] pthread_cond_timedwait returned %d\n", getpid(), ret);
     }
   }
   
@@ -465,7 +466,7 @@ int plr_watchdogExpired() {
   int waitIdx = plrShm->curWaitIdx;
   if (plrShm->nProc - plrShm->condWaitCnt[waitIdx] > 1) {
     // More than 1 process is not waiting, can't recover
-    fprintf(stderr, "[%d] Error: Watchdog expired & more than 1 process is not waiting - unrecoverable\n", myProcShm->pid);
+    plrlog(LOG_ERROR, "[%d] Error: Watchdog expired & more than 1 process is not waiting - unrecoverable\n", myProcShm->pid);
     return -1;
   }
   
@@ -473,14 +474,14 @@ int plr_watchdogExpired() {
   int didReplace = 0;
   for (int i = 0; i < plrShm->nProc; ++i) {
     if (allProcShm[i].waitIdx < 0) {
-      printf("[%d] Pid %d failed to wait before watchdog expired\n", myProcShm->pid, allProcShm[i].pid);
+      plrlog(LOG_DEBUG, "[%d] Pid %d failed to wait before watchdog expired\n", myProcShm->pid, allProcShm[i].pid);
       plrShm->restoring = 1;
       didReplace = 1;
       
       // Replace non-waiting process with a copy of the current process
       // Note that both the current & new processes will exit this function
       if (plr_replaceProcessIdx(i) < 0) {
-        fprintf(stderr, "Error: plr_replaceProcessIdx failed\n");
+        plrlog(LOG_ERROR, "Error: plr_replaceProcessIdx failed\n");
         return -1;
       }
 
@@ -490,7 +491,7 @@ int plr_watchdogExpired() {
         myProcShm->waitIdx = plrShm->curWaitIdx;
         plrShm->condWaitCnt[waitIdx]++;
         plrShm->restoring = 0;
-        printf("[%d] Watchdog replacement process started\n", myProcShm->pid);
+        plrlog(LOG_DEBUG, "[%d] Watchdog replacement process started\n", myProcShm->pid);
       }
       
       break;
@@ -499,7 +500,7 @@ int plr_watchdogExpired() {
   
   // Handle error case of watchdog expiring but all processes waiting
   if (!didReplace) {
-    fprintf(stderr, "[%d] Error: Watchdog expired but didn't find any non-waiting processes\n", myProcShm->pid);
+    plrlog(LOG_ERROR, "[%d] Error: Watchdog expired but didn't find any non-waiting processes\n", myProcShm->pid);
     return -1;
   }
   
@@ -516,13 +517,13 @@ int plr_replaceProcessIdx(int idx) {
   // Kill faulted process
   kill(allProcShm[idx].pid, SIGKILL);
   if (plrSD_freeProcData(&allProcShm[idx]) < 0) {
-    fprintf(stderr, "[%d] plrSD_freeProcData failed\n", myProcShm->pid);
+    plrlog(LOG_ERROR, "[%d] plrSD_freeProcData failed\n", myProcShm->pid);
     return -1;
   }
   
   // Fork replacement process from current good process
   if (plr_forkNewProcess(&allProcShm[idx]) < 0) {
-    fprintf(stderr, "[%d] plr_forkNewProcess failed\n", myProcShm->pid);
+    plrlog(LOG_ERROR, "[%d] plr_forkNewProcess failed\n", myProcShm->pid);
     return -1;
   }
   

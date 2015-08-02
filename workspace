@@ -9,6 +9,8 @@
         <File name="plrCommon\Makefile" />
         <File name="plrCommon\plr.c" />
         <File name="plrCommon\plr.h" />
+        <File name="plrCommon\plrLog.h />
+        <File name="plrCommon\plrLog.c />
         <File name="plrCommon\plrCompare.c" />
         <File name="plrCommon\plrCompare.h" />
         <File name="plrCommon\plrSharedData.c" />

@@ -1,4 +1,5 @@
 #include "plrCompare.h"
+#include "plrLog.h"
 #include <stdio.h>
 
 int plrC_compareArgs(const syscallArgs_t *args1, const syscallArgs_t *args2) {
@@ -7,7 +8,7 @@ int plrC_compareArgs(const syscallArgs_t *args1, const syscallArgs_t *args2) {
   #define CompareElement(elem, faultBit)    \
   if (args1->elem != args2->elem) {         \
     faultVal |= 1 << faultBit;              \
-    printf("Argument miscompare in " #elem ", 0x%lX != 0x%lX\n",  \
+    plrlog(LOG_DEBUG, "Argument miscompare in " #elem ", 0x%lX != 0x%lX\n",  \
       (unsigned long)args1->elem, (unsigned long)args2->elem);    \
   }
   

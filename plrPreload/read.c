@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include "plr.h"
+#include "plrLog.h"
 #include "libc_func.h"
 
 #include <stdio.h>
@@ -21,7 +22,7 @@ ssize_t read(int fd, void *buf, size_t count) {
     return _read(fd, buf, count);
   } else {
     plr_setInsidePLR();
-    printf("[%d:read] Read (up to) %ld bytes from fd %d\n", getpid(), count, fd);
+    plrlog(LOG_SYSCALL, "[%d:read] Read (up to) %ld bytes from fd %d\n", getpid(), count, fd);
     
     // Not comparing buf argument, different processes could have different
     // VM mappings and still be valid

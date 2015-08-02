@@ -1,11 +1,12 @@
-#include "pin.H"
-#include "plr.h"
-#include "plrSharedData.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <errno.h>
 #include <pthread.h>
+#include "pin.H"
+#include "plr.h"
+#include "plrLog.h"
+#include "plrSharedData.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Global variables
@@ -35,11 +36,11 @@ VOID getPLRShm() {
   // attached to. Until a way to access the process's own plrShm is found,
   // we can just acquire the shared data area again for this separate pointer.
   if (plrShm == NULL && plrSD_acquireSharedData() < 0) {
-    fprintf(stderr, "Error: plrSD_acquireSharedData() failed in pintool\n");
+    plrlog(LOG_ERROR, "Error: plrSD_acquireSharedData() failed in pintool\n");
     exit(1);
   }
   if (plrShm == NULL) {
-    fprintf(stderr, "[%d:pin] plrShm still NULL in pintool\n", PIN_GetPid());
+    plrlog(LOG_ERROR,  "[%d:pin] plrShm still NULL in pintool\n", PIN_GetPid());
     exit(1);
   }
   //printf("[%d] pin: &plrShm = %p, plrShm = %p\n", PIN_GetPid(), &plrShm, plrShm);
@@ -54,7 +55,7 @@ VOID getPLRShm() {
       }
     }
     if (myProcShm == NULL) {
-      fprintf(stderr, "[%d:pin] myProcShm still NULL in pintool\n", PIN_GetPid());
+      plrlog(LOG_ERROR, "[%d:pin] myProcShm still NULL in pintool\n", PIN_GetPid());
       exit(1);
     }
   }
@@ -84,7 +85,7 @@ VOID updateNextProcToFault(BOOL initialCall) {
       plrShm->nextFaultPid = nextPid;
       plrShm->nextFaultIdx = idx;
       plrShm->processFaulted = 0;
-      printf("[%d:pin] Updated next proc to fault to pid %d (idx %d)\n", PIN_GetPid(), nextPid, idx);
+      plrlog(LOG_DEBUG, "[%d:pin] Updated next proc to fault to pid %d (idx %d)\n", PIN_GetPid(), nextPid, idx);
     }
   }
   
@@ -154,7 +155,7 @@ VOID traceCallback() {
   rollCount++;
   if (roll <= faultProb) {
     plrShm->processFaulted = 1;
-    printf("[%d:pin] Pintool killing process, %f <= %f, after %ld rolls\n", PIN_GetPid(), roll, faultProb, rollCount);
+    plrlog(LOG_DEBUG, "[%d:pin] Pintool killing process, %f <= %f, after %ld rolls\n", PIN_GetPid(), roll, faultProb, rollCount);
     PIN_ExitApplication(2);
   }
 }
@@ -200,7 +201,7 @@ int main(int argc, char *argv[]) {
   const char *faultProbStr = KnobFaultProb.Value().c_str();
   faultProb = strtod(faultProbStr, &endptr);
   if (endptr == faultProbStr || *endptr != '\0' || (faultProb == HUGE_VAL && errno == ERANGE)) {
-    fprintf(stderr, "Error: Argument for -p is not an float value\n");
+    plrlog(LOG_ERROR, "Error: Argument for -p is not an float value\n");
     PIN_ExitApplication(1);
   }
   
