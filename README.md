@@ -17,3 +17,5 @@ More complete description TBD
 * Clean up fault cases like multiple faulted processes to exit PLR gracefully
 
 ## Known Issues
+* File offset will sometimes end up at the wrong position (2x where it should be) for a slave process after fwrite or fseek
+* Trying to force EOF indicator in fwrite emulation using fgetc after fseek sometimes reads data??
