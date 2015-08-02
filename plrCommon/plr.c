@@ -566,6 +566,11 @@ int plr_replaceProcessIdx(int idx) {
 ///////////////////////////////////////////////////////////////////////////////
 
 int plr_forkNewProcess(perProcData_t *newProcShm) {
+  // Copy parent's procShm here, to make sure that child gets a copy of the data
+  // as it is when this function is called, not when it gets the lock later
+  perProcData_t parentProcShmCpy;
+  memcpy(&parentProcShmCpy, myProcShm, sizeof(perProcData_t));
+  
   int childPid = fork();
   if (childPid < 0) {
     perror("fork");
@@ -578,9 +583,8 @@ int plr_forkNewProcess(perProcData_t *newProcShm) {
     pthread_mutex_lock(&plrShm->lock);
   
     // Initialize this new proc's data area
-    perProcData_t *parentProcShm = myProcShm;
     myProcShm = newProcShm;
-    plrSD_initProcDataAsCopy(myProcShm, parentProcShm);
+    plrSD_initProcDataAsCopy(myProcShm, &parentProcShmCpy);
   }
   
   return 0;
