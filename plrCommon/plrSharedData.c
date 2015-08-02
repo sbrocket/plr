@@ -145,16 +145,20 @@ int plrSD_freeProcData(perProcData_t *procShm) {
   }
   
   // Wake up any waiting threads & destroy condition variables
-  for (int i = 0; i < 2; ++i) {
-    if (pthread_cond_broadcast(&procShm->cond[i]) != 0) {
-      plrlog(LOG_ERROR, "pthread_cond_broadcast failed\n");
-      return -1;
-    }
-    if (pthread_cond_destroy(&procShm->cond[i]) != 0) {
-      plrlog(LOG_ERROR, "pthread_cond_destroy failed\n");
-      return -1;
-    }
-  }
+  // BUG: Trying to call pthread_cond_destroy to cleanup the cond variables
+  // seems to hang if a process was waiting in the cond and is then terminated
+  // Since there are no resources to cleanup for a Linux cond var, better
+  // off just skipping _destroy in lieu of a more complex solution
+  //for (int i = 0; i < 2; ++i) {
+  //  if (pthread_cond_broadcast(&procShm->cond[i]) != 0) {
+  //    plrlog(LOG_ERROR, "pthread_cond_broadcast failed\n");
+  //    return -1;
+  //  }
+  //  if (pthread_cond_destroy(&procShm->cond[i]) != 0) {
+  //    plrlog(LOG_ERROR, "pthread_cond_destroy failed\n");
+  //    return -1;
+  //  }
+  //}
   
   // Fill struct with zeros
   memset(procShm, 0, sizeof(perProcData_t));
