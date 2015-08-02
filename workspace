@@ -19,6 +19,8 @@
         <File name="plrCommon\pthreadUtil.c" />
         <File name="plrCommon\timeUtil.h" />
         <File name="plrCommon\timeUtil.c" />
+        <File name="plrCommon\stringUtil.h" />
+        <File name="plrCommon\stringUtil.c" />
     </Project>
     <Project name="plrPreload">
         <File name="plrPreload\crc32_util.h" />

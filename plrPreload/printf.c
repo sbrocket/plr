@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include "plr.h"
 #include "plrLog.h"
+#include "stringUtil.h"
 #include "libc_func.h"
 #include "crc32_util.h"
 
@@ -26,7 +27,11 @@ int com_vfprintf(const char *fncName, FILE *stream, const char *format, va_list 
   } else {
     plr_setInsidePLR();
     int fn = fileno(stream);
-    plrlog(LOG_SYSCALL, "[%d:%s] Fileno %d, format '%s'\n", getpid(), fncName, fn, format);
+    if (plrlogIsEnabled(LOG_SYSCALL)) {
+      char *formatFmt = str_expandEscapes(format);
+      plrlog(LOG_SYSCALL, "[%d:%s] Fileno %d, format '%s'\n", getpid(), fncName, fn, formatFmt);
+      free(formatFmt);
+    }
     
     // Use vasprintf to compute final string so that arguments can be checked 
     // in addition to format
@@ -35,6 +40,11 @@ int com_vfprintf(const char *fncName, FILE *stream, const char *format, va_list 
     char *resStr;
     int vasRet = vasprintf(&resStr, format, apCopy);
     va_end(apCopy);
+    if (plrlogIsEnabled(LOG_DEBUG)) {
+      char *resStrFmt = str_expandEscapes(resStr);
+      plrlog(LOG_DEBUG, "[%d:%s] Str = '%s'\n", getpid(), fncName, resStrFmt);
+      free(resStrFmt);
+    }
     
     syscallArgs_t args = {
       .addr = _off_vfprintf,

@@ -55,3 +55,18 @@ int plrlog(plrLogLevel_t level, const char *format, ...) {
   }
   return 0;
 }
+
+int plrlogIsEnabled(plrLogLevel_t level) {
+  checkLogSettings();
+  
+  // Shouldn't specify LOG_NONE as the message level
+  if (level == LOG_NONE) {
+    assert(level != LOG_NONE);
+    return 0;
+  }
+  
+  if (level <= g_logLevel) {
+    return 1;
+  }
+  return 0;
+}
