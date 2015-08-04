@@ -36,6 +36,7 @@
         <File name="plrPreload\unlink.c" />
         <File name="plrPreload\getpid.c" />
         <File name="plrPreload\printf.c" />
+        <File name="plrPreload\printf_chk.c" />
         <File name="plrPreload\fopen.c" />
         <File name="plrPreload\fread.c" />
         <File name="plrPreload\fgetc.c" />
