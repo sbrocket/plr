@@ -37,8 +37,9 @@
         <File name="plrPreload\getpid.c" />
         <File name="plrPreload\printf.c" />
         <File name="plrPreload\fopen.c" />
-        <File name="plrPreload\fwrite.c" />
+        <File name="plrPreload\fread.c" />
         <File name="plrPreload\fgetc.c" />
+        <File name="plrPreload\fwrite.c" />
         <File name="plrPreload\fseek.c" />
     </Project>
     <Project name="pinFaultInject">
