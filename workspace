@@ -9,8 +9,8 @@
         <File name="plrCommon\Makefile" />
         <File name="plrCommon\plr.h" />
         <File name="plrCommon\plr.c" />
-        <File name="plrCommon\plrLog.h />
-        <File name="plrCommon\plrLog.c />
+        <File name="plrCommon\plrLog.h" />
+        <File name="plrCommon\plrLog.c" />
         <File name="plrCommon\plrCompare.h" />
         <File name="plrCommon\plrCompare.c" />
         <File name="plrCommon\plrSharedData.h" />
@@ -39,6 +39,8 @@
         <File name="plrPreload\fopen.c" />
         <File name="plrPreload\fread.c" />
         <File name="plrPreload\fgetc.c" />
+        <File name="plrPreload\fgets.c" />
+        <File name="plrPreload\gets.c" />
         <File name="plrPreload\fwrite.c" />
         <File name="plrPreload\fseek.c" />
     </Project>
