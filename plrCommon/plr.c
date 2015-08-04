@@ -88,7 +88,7 @@ void plr_refreshSharedData() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-int plr_figureheadInit(int nProc, int pintoolMode, int pid) {
+int plr_figureheadInit(int nProc, int pintoolMode, int pid, long watchdogTimeoutMs) {
   // Set figurehead process as subreaper so grandchild processes
   // get reparented to it, instead of init
   if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0) {
@@ -102,6 +102,7 @@ int plr_figureheadInit(int nProc, int pintoolMode, int pid) {
   }
   plrShm->figureheadPid = pid;
   plrShm->insidePLRInitTrue = pintoolMode;
+  plrShm->watchdogTimeout = watchdogTimeoutMs;
   return 0;
 }
 
@@ -461,7 +462,7 @@ int plr_waitBarrier(int (*actionPtr)(void), waitActionType_t actionType) {
     // Must use CLOCK_REALTIME, _timedwait needs abstime since epoch
     struct timespec absWait;
     clock_gettime(CLOCK_REALTIME, &absWait);
-    absWait = tspecAddMs(absWait, 200);
+    absWait = tspecAddMs(absWait, plrShm->watchdogTimeout);
         
     // Using _timedwait as a watchdog timer, to avoid deadlock in case one of the
     // redundant processes has died or is stuck

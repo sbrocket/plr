@@ -27,9 +27,11 @@ void printUsage();
 ///////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char *argv[]) {
+  long watchdogTimeout = 200;
+  
   // Parse command line arguments
   int opt;
-  while ((opt = getopt(argc, argv, "pln:")) != -1) {
+  while ((opt = getopt(argc, argv, "pln:t:")) != -1) {
     switch (opt) {
     case 'h':
       printUsage();
@@ -48,6 +50,15 @@ int main(int argc, char *argv[]) {
         return 1;
       }
       g_numRedunProc = val;
+    } break;
+    case 't': {
+      char *endptr;
+      long val = strtol(optarg, &endptr, 10);
+      if (endptr == optarg || *endptr != '\0' || ((val == LONG_MIN || val == LONG_MAX) && errno == ERANGE)) {
+        fprintf(stderr, "Error: Argument for -t is not an integer value\n");
+        return 1;
+      }
+      watchdogTimeout = val;
     } break;
     case '?':
       // getopt() prints an error message to stderr for unrecognized options 
@@ -83,7 +94,7 @@ int main(int argc, char *argv[]) {
   }
   
   int figPid = getpid();
-  if (plr_figureheadInit(g_numRedunProc, g_pintoolMode, figPid) < 0) {
+  if (plr_figureheadInit(g_numRedunProc, g_pintoolMode, figPid, watchdogTimeout) < 0) {
     fprintf(stderr, "Error: PLR figurehead init failed\n");
     return 1;
   }
@@ -214,5 +225,6 @@ void printUsage() {
     "  -h         Print this help and exit\n"
     "  -l         Enable LD_PRELOAD mode (default)\n"
     "  -p         Enable PinTool mode\n"
+    "  -t <int>   Watchdog timeout interval, in ms (default=200ms)\n"
     "  -n <int>   Number of redundant processes to create (default=3)\n");
 }

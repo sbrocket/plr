@@ -29,6 +29,8 @@ typedef struct {
   int figureheadPid;
   // Total number of redundant processes
   int nProc;
+  // Watchdog timeout interval (in milliseconds)
+  long watchdogTimeout;
   // Index of current condition variable to wait in.
   int curWaitIdx;
   // Count of processes currently waiting for a given condition

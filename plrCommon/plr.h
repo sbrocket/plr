@@ -10,7 +10,7 @@ extern "C" {
 // Update the global shared data variables (if needed)
 void plr_refreshSharedData();
 
-int plr_figureheadInit(int nProc, int pintoolMode, int pid);
+int plr_figureheadInit(int nProc, int pintoolMode, int pid, long watchdogTimeoutMs);
 int plr_figureheadExit();
 
 // plr_processInit() should only be called once, by the first redundant
