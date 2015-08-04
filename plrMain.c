@@ -28,10 +28,12 @@ void printUsage();
 
 int main(int argc, char *argv[]) {
   long watchdogTimeout = 200;
+  char *outputFile = NULL;
+  char *errorFile = NULL;
   
   // Parse command line arguments
   int opt;
-  while ((opt = getopt(argc, argv, "pln:t:")) != -1) {
+  while ((opt = getopt(argc, argv, "pln:t:o:")) != -1) {
     switch (opt) {
     case 'h':
       printUsage();
@@ -60,6 +62,12 @@ int main(int argc, char *argv[]) {
       }
       watchdogTimeout = val;
     } break;
+    case 'o':
+      outputFile = optarg;
+      break;
+    case 'e':
+      errorFile = optarg;
+      break;
     case '?':
       // getopt() prints an error message to stderr for unrecognized options 
       // if opterr != 0 (default)
@@ -91,6 +99,34 @@ int main(int argc, char *argv[]) {
   if (g_ldpreloadMode && getenv("LD_PRELOAD") != NULL) {
     fprintf(stderr, "Error: LD_PRELOAD already set when running PLR in LD_PRELOAD mode\n");
     return 1;
+  }
+  
+  // If "-o <file>" option was given, open the given file and replace stdout
+  if (outputFile != NULL) {
+    int outFD = open(outputFile, O_WRONLY | O_TRUNC | O_CREAT, 0660);
+    if (outFD == -1) {
+      fprintf(stderr, "Error: File argument to -o option could not be opened/created\n");
+      return 1;
+    }
+    if (dup2(outFD, STDOUT_FILENO) < 0) {
+      fprintf(stderr, "Error: dup2 failed when replacing stdout\n");
+      return 1;
+    }
+    close(outFD);
+  }
+  
+  // If "-e <file>" option was given, open the given file and replace stderr
+  if (errorFile != NULL) {
+    int errFD = open(errorFile, O_WRONLY | O_TRUNC | O_CREAT, 0660);
+    if (errFD == -1) {
+      fprintf(stderr, "Error: File argument to -o option could not be opened/created\n");
+      return 1;
+    }
+    if (dup2(errFD, STDERR_FILENO) < 0) {
+      fprintf(stderr, "Error: dup2 failed when replacing stdout\n");
+      return 1;
+    }
+    close(errFD);
   }
   
   int figPid = getpid();
@@ -223,6 +259,8 @@ void printUsage() {
     "Example: plr -l -- cat myfile.txt\n"
     "Options:\n"
     "  -h         Print this help and exit\n"
+    "  -o <file>  Redirect stdout to the given file, which is created or overwritten\n"
+    "  -e <file>  Redirect stderr to the given file, which is created or overwritten\n"
     "  -l         Enable LD_PRELOAD mode (default)\n"
     "  -p         Enable PinTool mode\n"
     "  -t <int>   Watchdog timeout interval, in ms (default=200ms)\n"
