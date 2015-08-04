@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include "plr.h"
 #include "plrLog.h"
 #include "libc_func.h"
@@ -29,7 +30,8 @@ int com_fgetc(const char *fncName, FILE *stream) {
     
     syscallArgs_t args = {
       .addr = _off_fgetc,
-      .arg[0] = fn
+      .arg[0] = crc32(0, fncName, strlen(fncName)),
+      .arg[1] = fn,
     };
     plr_checkSyscallArgs(&args);
     
