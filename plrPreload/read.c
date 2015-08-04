@@ -48,7 +48,9 @@ ssize_t read(int fd, void *buf, size_t count) {
       
       // Store return value & returned data in shared memory for slave processes
       plr_copyToShm(&shmDat, sizeof(shmDat), 0);
-      plr_copyToShm(buf, ret, sizeof(shmDat));
+      if (shmDat.ret > 0) {
+        plr_copyToShm(buf, ret, sizeof(shmDat));
+      }
       return 0;
     }
     // All processes call plr_masterAction() to synchronize at this point
@@ -58,7 +60,9 @@ ssize_t read(int fd, void *buf, size_t count) {
       // Slaves copy return values from shared memory
       readShmData_t shmDat;
       plr_copyFromShm(&shmDat, sizeof(shmDat), 0);
-      plr_copyFromShm(buf, shmDat.ret, sizeof(shmDat));
+      if (shmDat.ret > 0) {
+        plr_copyFromShm(buf, shmDat.ret, sizeof(shmDat));
+      }
       
       // Slaves seek to new fd offset
       // Can't use SEEK_CUR and advance by ret because the slave processes
