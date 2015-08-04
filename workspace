@@ -42,6 +42,9 @@
         <File name="plrPreload\fgets.c" />
         <File name="plrPreload\gets.c" />
         <File name="plrPreload\fwrite.c" />
+        <File name="plrPreload\fputc.c" />
+        <File name="plrPreload\fputs.c" />
+        <File name="plrPreload\puts.c" />
         <File name="plrPreload\fseek.c" />
     </Project>
     <Project name="pinFaultInject">
