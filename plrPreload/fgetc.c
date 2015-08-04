@@ -115,3 +115,7 @@ int fgetc(FILE *stream) {
 int getc(FILE *stream) {
   return com_fgetc("getc",stream);
 }
+
+int getchar() {
+  return com_fgetc("getchar",stdin);
+}
