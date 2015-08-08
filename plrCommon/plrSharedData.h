@@ -54,7 +54,8 @@ typedef struct {
   int processFaulted;
   int nextFaultIdx;
   int nextFaultPid;
-  unsigned int randSeed;
+  unsigned long eventCount;
+  unsigned long targetCount;
 } plrData_t;
 
 extern plrData_t *plrShm;

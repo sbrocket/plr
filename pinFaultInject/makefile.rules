@@ -74,6 +74,7 @@ LIB_ROOTS :=
 # See makefile.default.rules for the default build rules.
 
 PLR_COMFLAGS  = -I../plrCommon
+PLR_CXXFLAGS  = -std=gnu++11
 PLR_LDFLAGS   = -Wl,--no-undefined -Wl,-rpath='$$ORIGIN' -L../lib
 PLR_LIBS      = -lplrCommon
 
@@ -91,7 +92,7 @@ $(COBJ): $(OBJDIR)%$(OBJ_SUFFIX): %.c
 
 # Rule to build any C++ source files
 $(CXXOBJ): $(OBJDIR)%$(OBJ_SUFFIX): %.cpp
-	$(CXX) $(TOOL_CXXFLAGS) $(PLR_COMFLAGS) $(COMP_OBJ)$@ -MMD $<
+	$(CXX) $(TOOL_CXXFLAGS) $(PLR_CXXFLAGS) $(PLR_COMFLAGS) $(COMP_OBJ)$@ -MMD $<
   
 # Rules so that OBJDIR is created if it doesn't exist
 $(COBJ): | $(OBJDIR)

@@ -3,6 +3,8 @@
 #include <math.h>
 #include <errno.h>
 #include <pthread.h>
+#include <chrono>
+#include <random>
 #include "pin.H"
 #include "plr.h"
 #include "plrLog.h"
@@ -10,16 +12,16 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 // Global variables
-FILE *trace;
-double faultProb;
 perProcData_t *nextProcToFault = NULL;
+ADDRINT plrLoAddr, plrHiAddr;
+std::default_random_engine g_randGen;
+std::normal_distribution<double> g_eventDist;
+std::uniform_int_distribution<int> g_procDist;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Commandline switches
-KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
-    "o", "plrTool.out", "Specify output file name");
-KNOB<string> KnobFaultProb(KNOB_MODE_WRITEONCE, "pintool",
-    "p", "0.01", "Specify per-instruction fault injection probability");
+KNOB<BOOL> KnobTraceFaultMode(KNOB_MODE_WRITEONCE, "pintool",
+    "t", "1", "Enable trace fault injection mode");
     
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -43,7 +45,6 @@ VOID getPLRShm() {
     plrlog(LOG_ERROR,  "[%d:pin] plrShm still NULL in pintool\n", PIN_GetPid());
     exit(1);
   }
-  //printf("[%d] pin: &plrShm = %p, plrShm = %p\n", PIN_GetPid(), &plrShm, plrShm);
 
   // Set myProcShm properly inside Pintool
   int myPid = PIN_GetPid();
@@ -70,15 +71,10 @@ VOID updateNextProcToFault(BOOL initialCall) {
     pthread_mutex_lock(&plrShm->toolLock);
   }
   
-  // Initialize random seed
+  // Choose the next PID to inject a fault into
   int curFaultPid = plrShm->nextFaultPid;
-  if (curFaultPid == 0) {
-    plrShm->randSeed = time(NULL)+PIN_GetPid();
-  }
-  
   if (curFaultPid == 0 || !initialCall) {
-    double roll = (double)rand_r(&plrShm->randSeed)/RAND_MAX;
-    int idx = (int)(plrShm->nProc*roll) % plrShm->nProc;
+    int idx = g_procDist(g_randGen);
     int nextPid = allProcShm[idx].pid;
     
     if (nextPid != curFaultPid && nextPid != 0) {
@@ -89,6 +85,10 @@ VOID updateNextProcToFault(BOOL initialCall) {
     }
   }
   
+  // Choose the event count for the next fault injection
+  plrShm->eventCount = 0;
+  plrShm->targetCount = g_eventDist(g_randGen);
+  
   if (initialCall) {
     pthread_mutex_unlock(&plrShm->toolLock);
   }
@@ -96,34 +96,7 @@ VOID updateNextProcToFault(BOOL initialCall) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-ADDRINT plrLoAddr, plrHiAddr;
-VOID ImageLoad(IMG img, VOID *v) {
-  // Insert a call after plr_processInit to initialize which process will
-  // have a fault injected
-  //printf("[%d] ImageLoad %s\n", PIN_GetPid(), IMG_Name(img).c_str());
-  RTN rtn = RTN_FindByName(img, "plr_processInit");
-  if (RTN_Valid(rtn)) {
-    RTN_Open(rtn);
-    RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)updateNextProcToFault, IARG_BOOL, TRUE, IARG_END);
-    RTN_Close(rtn);
-  }
-  
-  // TODO: Check lo/hi vs start/size to see where different Pin plrShm & other global data is
-  //printf("Lo 0x%lx, Hi 0x%lx, Start 0x%lx, Size 0x%x\n", IMG_LowAddress(img), IMG_HighAddress(img), IMG_StartAddress(img), IMG_SizeMapped(img));
-  
-  string imageName = IMG_Name(img);
-  string targetLib = "libplrPreload.so";
-  if (imageName.length() >= targetLib.length() 
-      && imageName.substr(imageName.length()-targetLib.length()) == targetLib)
-  {
-    plrLoAddr = IMG_LowAddress(img);
-    plrHiAddr = IMG_HighAddress(img);
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-VOID traceCallback() {
+VOID injectFault_trace() {
   // Only update next fault process after that process has failed and been
   // replaced
   if (plrShm->processFaulted == 1) {
@@ -149,14 +122,34 @@ VOID traceCallback() {
     return;
   }
   
-  static long rollCount = 0;
-  // Not bothering to lock on randSeed accesses, race condition here treated as additional "randomness"
-  float roll = (float)rand_r(&plrShm->randSeed)/RAND_MAX;
-  rollCount++;
-  if (roll <= faultProb) {
+  // Increment event count, kill process if reached target
+  plrShm->eventCount++;
+  if (plrShm->eventCount >= plrShm->targetCount) {
     plrShm->processFaulted = 1;
-    plrlog(LOG_DEBUG, "[%d:pin] Pintool killing process, %f <= %f, after %ld rolls\n", PIN_GetPid(), roll, faultProb, rollCount);
+    plrlog(LOG_DEBUG, "[%d:pin] Pintool killing process after %ld events\n", PIN_GetPid(), plrShm->eventCount);
     PIN_ExitApplication(2);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+VOID ImageLoad(IMG img, VOID *v) {
+  // Insert a call after plr_processInit to initialize which process will
+  // have a fault injected
+  RTN rtn = RTN_FindByName(img, "plr_processInit");
+  if (RTN_Valid(rtn)) {
+    RTN_Open(rtn);
+    RTN_InsertCall(rtn, IPOINT_AFTER, (AFUNPTR)updateNextProcToFault, IARG_BOOL, TRUE, IARG_END);
+    RTN_Close(rtn);
+  }
+
+  string imageName = IMG_Name(img);
+  string targetLib = "libplrPreload.so";
+  if (imageName.length() >= targetLib.length() 
+      && imageName.substr(imageName.length()-targetLib.length()) == targetLib)
+  {
+    plrLoAddr = IMG_LowAddress(img);
+    plrHiAddr = IMG_HighAddress(img);
   }
 }
 
@@ -166,7 +159,7 @@ VOID InstrumentTrace(TRACE trace, VOID *arg) {
   // plrLoAddr/plrHiAddr used to avoid instrumenting traces from plrPreload library
   ADDRINT addr = TRACE_Address(trace);
   if (TRACE_Original(trace) && (addr < plrLoAddr || addr > plrHiAddr)) {
-    TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR)traceCallback, IARG_END);
+    TRACE_InsertCall(trace, IPOINT_BEFORE, (AFUNPTR)injectFault_trace, IARG_END);
   }
 }
 
@@ -178,12 +171,8 @@ VOID ApplicationStart(VOID *arg) {
   // This clears that initial flag.
   getPLRShm();
   plr_clearInsidePLR();
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-void Fini(INT32 code, void *v) {
-  //fclose(trace);
+  
+  g_procDist = std::uniform_int_distribution<int>(0, plrShm->nProc-1);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -196,20 +185,19 @@ int main(int argc, char *argv[]) {
     return Usage();
   }
   
-  // Parse fault injection probability option
-  char *endptr;
-  const char *faultProbStr = KnobFaultProb.Value().c_str();
-  faultProb = strtod(faultProbStr, &endptr);
-  if (endptr == faultProbStr || *endptr != '\0' || (faultProb == HUGE_VAL && errno == ERANGE)) {
-    plrlog(LOG_ERROR, "Error: Argument for -p is not an float value\n");
+  // Initialize random number generator/distributions
+  unsigned seed = std::chrono::system_clock::now().time_since_epoch().count() + PIN_GetPid();
+  g_randGen = std::default_random_engine(seed);
+  if (KnobTraceFaultMode) {
+    g_eventDist = std::normal_distribution<double>(500,100);
+    
+    TRACE_AddInstrumentFunction(InstrumentTrace, NULL);
+  } else {
+    plrlog(LOG_ERROR, "Error: Only trace fault injection mode is available ('-t' option)\n");
     PIN_ExitApplication(1);
   }
   
-  //trace = fopen(KnobOutputFile.Value().c_str(), "w");
-  
-  PIN_AddFiniFunction(Fini, NULL);
   IMG_AddInstrumentFunction(ImageLoad, NULL);
-  TRACE_AddInstrumentFunction(InstrumentTrace, NULL);
   PIN_AddApplicationStartFunction(ApplicationStart, NULL);
   
   // Start the program, never returns
