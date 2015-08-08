@@ -33,39 +33,8 @@ static INT32 Usage() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-VOID getPLRShm() {
-  // BANDAID: The pintool seems to access a different plrShm than the process it's
-  // attached to. Until a way to access the process's own plrShm is found,
-  // we can just acquire the shared data area again for this separate pointer.
-  if (plrShm == NULL && plrSD_acquireSharedData() < 0) {
-    plrlog(LOG_ERROR, "Error: plrSD_acquireSharedData() failed in pintool\n");
-    exit(1);
-  }
-  if (plrShm == NULL) {
-    plrlog(LOG_ERROR,  "[%d:pin] plrShm still NULL in pintool\n", PIN_GetPid());
-    exit(1);
-  }
-
-  // Set myProcShm properly inside Pintool
-  int myPid = PIN_GetPid();
-  if (myProcShm == NULL || myProcShm->pid != myPid) {
-    for (int i = 0; i < plrShm->nProc; ++i) {
-      if (allProcShm[i].pid == myPid) {
-        myProcShm = &allProcShm[i];
-        break;
-      }
-    }
-    if (myProcShm == NULL) {
-      plrlog(LOG_ERROR, "[%d:pin] myProcShm still NULL in pintool\n", PIN_GetPid());
-      exit(1);
-    }
-  }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 VOID updateNextProcToFault(BOOL initialCall) {   
-  getPLRShm();
+  plr_refreshSharedData();
  
   if (initialCall) {
     pthread_mutex_lock(&plrShm->toolLock);
@@ -108,7 +77,7 @@ VOID injectFault_trace() {
   }
   
   // Make sure that myProcShm is pointing to the right area
-  getPLRShm();
+  plr_refreshSharedData();
   
   // Exit if this isn't the process to be faulted
   if (plrShm->nextFaultPid != PIN_GetPid()) {
@@ -169,7 +138,7 @@ VOID ApplicationStart(VOID *arg) {
   // The "inside PLR" flag is initialized to true during PLR startup if running with the
   // fault injection Pintool, so that syscalls related to Pin startup aren't emulated.
   // This clears that initial flag.
-  getPLRShm();
+  plr_refreshSharedData();
   plr_clearInsidePLR();
   
   g_procDist = std::uniform_int_distribution<int>(0, plrShm->nProc-1);
