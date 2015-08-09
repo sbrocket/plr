@@ -51,7 +51,7 @@ typedef struct {
   // The following data is added here for convenience, to avoid creating a separate shared 
   // data region. It is only used by the fault injection pintool, not by PLR itself.
   pthread_mutex_t toolLock;
-  int processFaulted;
+  int faultInjected;
   int nextFaultIdx;
   int nextFaultPid;
   unsigned long eventCount;

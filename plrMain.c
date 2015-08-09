@@ -13,9 +13,16 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Global variables & defines
 
-static int g_pintoolMode = 0;
-static int g_ldpreloadMode = 1;
+typedef enum {
+  PINTOOL_MODE_OFF,
+  PINTOOL_MODE_TRACE,
+  PINTOOL_MODE_INS
+} PINTOOL_MODE;
+
+static PINTOOL_MODE g_pintoolMode = PINTOOL_MODE_OFF;
 static int g_numRedunProc = 3;
+long g_injectEventMean = 0;
+char *g_injectEventMeanStr = NULL;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private functions
@@ -33,17 +40,31 @@ int main(int argc, char *argv[]) {
   
   // Parse command line arguments
   int opt;
-  while ((opt = getopt(argc, argv, "pln:t:o:")) != -1) {
+  while ((opt = getopt(argc, argv, "p:m:n:t:o:e:")) != -1) {
     switch (opt) {
     case 'h':
       printUsage();
       return 0;
     case 'p':
-      g_pintoolMode = 2;
+      if (strcmp(optarg, "t") == 0 || strcmp(optarg, "trace") == 0) {
+        g_pintoolMode = PINTOOL_MODE_TRACE;
+      } else if (strcmp(optarg, "i") == 0 || strcmp(optarg, "ins") == 0) {
+        g_pintoolMode = PINTOOL_MODE_INS;
+      } else {
+        fprintf(stderr, "Error: Invalid pintool mode for -p, must be \"trace\" or \"ins\"\n");
+        return 1;
+      }
       break;
-    case 'l':
-      g_ldpreloadMode = 2;
-      break;
+     case 'm': {
+      char *endptr;
+      long val = strtol(optarg, &endptr, 10);
+      if (endptr == optarg || *endptr != '\0' || ((val == LONG_MIN || val == LONG_MAX) && errno == ERANGE)) {
+        fprintf(stderr, "Error: Argument for -m is not an integer value\n");
+        return 1;
+      }
+      g_injectEventMeanStr = optarg;
+      g_injectEventMean = val;
+    } break;
     case 'n': {
       char *endptr;
       long val = strtol(optarg, &endptr, 10);
@@ -78,16 +99,6 @@ int main(int argc, char *argv[]) {
     }
   }
   
-  if (g_pintoolMode == 2) {
-    if (g_ldpreloadMode == 2) {
-      fprintf(stderr, "Error: -l and -p options are mutually exclusive\n");
-      printUsage();
-      return 1;
-    } else {
-      g_ldpreloadMode = 0;
-    }
-  }
-  
   int progArgc = argc-optind;
   if (progArgc < 1) {
     fprintf(stderr, "Error: Specify a command to run using PLR\n");
@@ -96,8 +107,8 @@ int main(int argc, char *argv[]) {
   }
   char **progArgv = &argv[optind];
   
-  if (g_ldpreloadMode && getenv("LD_PRELOAD") != NULL) {
-    fprintf(stderr, "Error: LD_PRELOAD already set when running PLR in LD_PRELOAD mode\n");
+  if (getenv("LD_PRELOAD") != NULL) {
+    fprintf(stderr, "Error: LD_PRELOAD already set when running PLR\n");
     return 1;
   }
   
@@ -199,28 +210,47 @@ int startFirstProcess(int argc, char **argv) {
     close(execErrPipe[0]);
     
     char **cArgv;
-    if (g_pintoolMode) {
+    if (g_pintoolMode != PINTOOL_MODE_OFF) {
       // Build child argv by appending pintool injection to front of command
-      char *pinArgv[4] = {"pin64", "-t", "lib/pinFaultInject.so", "--"};
-      int cArgc = 4+argc+1;
-      cArgv = malloc(cArgc*sizeof(char*));
+      char *pinArgv[] = {"pin64", "-t", "lib/pinFaultInject.so"};
+      int pinArgc = sizeof(pinArgv)/sizeof(*pinArgv);
+      int maxArgc = pinArgc+4+argc+1;
+      cArgv = malloc(maxArgc*sizeof(char*));
       
+      // Add pin command/arguments into execvp argv
       int i = 0;
-      for (; i < 4; ++i) {
+      for (; i < pinArgc; ++i) {
         cArgv[i] = pinArgv[i];
       }
-      for (; i < cArgc; ++i) {
-        cArgv[i] = argv[i-4];
+      if (g_pintoolMode == PINTOOL_MODE_TRACE) {
+        cArgv[i] = "-trace"; ++i;
+        if (g_injectEventMean > 0) {
+          cArgv[i] = "-traceMean"; ++i;
+          cArgv[i] = g_injectEventMeanStr; ++i;
+        }
+      } else {
+        cArgv[i] = "-ins"; ++i;
+         if (g_injectEventMean > 0) {
+          cArgv[i] = "-insMean"; ++i;
+          cArgv[i] = g_injectEventMeanStr; ++i;
+        }
       }
-      setenv("LD_PRELOAD","./lib/libplrPreload.so",0);
+      cArgv[i] = "--"; ++i;
       
+      // Copy target program argv into execvp argv
+      for (int j=0; j < argc; ++j, ++i) {
+        cArgv[i] = argv[j];
+      }
+      
+      // Add NULL terminator to execvp argv
+      cArgv[i] = NULL;
     } else {
       // argv is already NULL-terminated
       cArgv = argv;
-      
-      // Set LD_PRELOAD in environment to replace libc syscall functions
-      setenv("LD_PRELOAD","./lib/libplrPreload.so",0);
     }
+    
+     // Set LD_PRELOAD in environment to replace libc syscall functions
+    setenv("LD_PRELOAD","./lib/libplrPreload.so",0);
     
     execvp(cArgv[0], cArgv);
     
@@ -256,13 +286,13 @@ int startFirstProcess(int argc, char **argv) {
 void printUsage() {
   printf("\n"
     "Usage: plr [OPTIONS] <program> [program args]\n"
-    "Example: plr -l -- cat myfile.txt\n"
+    "Example: plr -- cat myfile.txt\n"
     "Options:\n"
-    "  -h         Print this help and exit\n"
-    "  -o <file>  Redirect stdout to the given file, which is created or overwritten\n"
-    "  -e <file>  Redirect stderr to the given file, which is created or overwritten\n"
-    "  -l         Enable LD_PRELOAD mode (default)\n"
-    "  -p         Enable PinTool mode\n"
-    "  -t <int>   Watchdog timeout interval, in ms (default=200ms)\n"
-    "  -n <int>   Number of redundant processes to create (default=3)\n");
+    "  -h             Print this help and exit\n"
+    "  -o <file>      Redirect stdout to the given file, which is created or overwritten\n"
+    "  -e <file>      Redirect stderr to the given file, which is created or overwritten\n"
+    "  -p <trace|ins> Apply fault injection Pintool in either trace or instruction mode\n"
+    "  -m <long>      Mean number of trace/instructions before fault injection\n"
+    "  -t <int>       Watchdog timeout interval, in ms (default=200ms)\n"
+    "  -n <int>       Number of redundant processes to create (default=3)\n");
 }
