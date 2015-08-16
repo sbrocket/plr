@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
   
   // Parse command line arguments
   int opt;
-  while ((opt = getopt(argc, argv, "p:m:n:t:o:e:")) != -1) {
+  while ((opt = getopt(argc, argv, "hp:m:n:t:o:e:")) != -1) {
     switch (opt) {
     case 'h':
       printUsage();
